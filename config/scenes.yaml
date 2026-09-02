@@ -1,0 +1,32 @@
+schema_version: 1
+
+scenes:
+  - id: "01_galactic_wind"
+    file: "scenes/01_galactic_wind.py"
+    class_name: "GalacticWind"
+    output_name: "GalacticWind"
+    requires_local_science: false
+
+  - id: "02_wimp_recoil"
+    file: "scenes/02_wimp_recoil.py"
+    class_name: "WIMPRecoil"
+    output_name: "WIMPRecoil"
+    requires_local_science: false
+
+  - id: "03_tpc_readout"
+    file: "scenes/03_tpc_readout.py"
+    class_name: "TPCReadout"
+    output_name: "TPCReadout"
+    requires_local_science: false
+
+  - id: "04_cygno04_full_track"
+    file: "scenes/04_cygno04_full_track.py"
+    class_name: "CYGNO04FullTrack"
+    output_name: "CYGNO04FullTrack"
+    requires_local_science: false
+
+  - id: "05_lngs_positioning"
+    file: "scenes/05_lngs_positioning.py"
+    class_name: "LNGSPositioning"
+    output_name: "LNGSPositioning"
+    requires_local_science: true

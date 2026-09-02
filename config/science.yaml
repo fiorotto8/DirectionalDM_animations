@@ -1,0 +1,81 @@
+schema_version: 1
+
+conventions:
+  cygnus_sightline: "+n_cyg"
+  solar_velocity: "+n_cyg"
+  incoming_wimp_velocity: "-n_cyg"
+  momentum_transfer: "q = p_chi_in - p_chi_out"
+  stationary_target_recoil: "p_recoil = q"
+  reconstructed_track_default: "unoriented_axis"
+
+scope:
+  halo_frame: "solar_only"
+  target_nucleus: "generic"
+  wimp_mass: "illustrative_dimensionless_ratio"
+  exact_cygnus_coordinates: "PLACEHOLDER"
+
+geometry:
+  authority: "PLACEHOLDER"
+  revision_label: "PLACEHOLDER"
+  topology: "two_back_to_back_drift_volumes"
+  cameras_per_optical_end: 3
+  pmts_per_optical_end: 8
+  gem_stages_per_end: 3
+  camera_points_to: "gem_plane"
+
+presentation_projection:
+  pmts_visible_per_optical_end: 4
+  note: "Two-dimensional presentation convention only"
+  camera_label: "qCMOS"
+
+physics:
+  electron_drift: "central_cathode_side_to_outward_gem_side"
+  conventional_electric_field: "opposite_electron_drift"
+  gas_mixture: "He:CF4 60:40"
+  pressure: "atmospheric"
+  drift_field: "PLACEHOLDER"
+  cathode_voltage: "PLACEHOLDER"
+  gem_voltages: "PLACEHOLDER"
+  gain: "PLACEHOLDER"
+  diffusion: "PLACEHOLDER"
+  light_yield: "PLACEHOLDER"
+
+scale_up:
+  cygno30: "modular_array_of_cygno04_modules"
+
+site:
+  location: "LNGS Hall F"
+  authority: "PLACEHOLDER"
+  plan_revision_label: "PLACEHOLDER"
+  underground_overview: "PLACEHOLDER"
+  hall_f_total_length_mm: "PLACEHOLDER"
+  hall_f_aisle_width_mm: "PLACEHOLDER"
+  hall_f_working_width_mm: "PLACEHOLDER"
+  hall_f_zones: "PLACEHOLDER"
+  exact_underground_route: "PLACEHOLDER"
+  hall_f_services_layout: "PLACEHOLDER"
+
+shielding:
+  authority: "PLACEHOLDER"
+  revision_label: "PLACEHOLDER"
+  documented_components:
+    - "polyethylene_base"
+    - "pure_copper_base_and_box"
+    - "external_water_tanks"
+    - "safety_containment_pool"
+  dimensions:
+    outer_envelope_mm: "PLACEHOLDER"
+    inner_occupied_void_mm: "PLACEHOLDER"
+    polyethylene_base_overall_mm: "PLACEHOLDER"
+    copper_shield_outer_mm: "PLACEHOLDER"
+    detector_outer_envelope_mm: "PLACEHOLDER"
+    safety_pool_footprint_mm: "PLACEHOLDER"
+  material_thicknesses:
+    copper_shield_mm: "PLACEHOLDER"
+    water_shield_approx_mm: "PLACEHOLDER"
+    polyethylene_plate_thickness_mm: "PLACEHOLDER"
+  component_masses_tonnes:
+    copper: "PLACEHOLDER"
+    polyethylene: "PLACEHOLDER"
+    water_derived_approx: "PLACEHOLDER"
+  water: "PLACEHOLDER"

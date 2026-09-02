@@ -1,0 +1,14 @@
+schema_version: 1
+handle: "@cygno.exp"
+page_url: "https://www.instagram.com/cygno.exp/"
+logo_path: "assets/logo/cygno-logo.jpg"
+
+signature:
+  width: 2.05
+  height: 0.54
+  margin: 0.25
+  background_opacity: 0.84
+
+outro:
+  duration: 4.0
+  qr_width: 3.4

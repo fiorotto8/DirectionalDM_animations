@@ -1,0 +1,36 @@
+# Private collaboration material and local approvals
+/assets/
+/asset/
+/config/local.yaml
+
+# Generated animation and release artifacts
+/media/
+/dist/
+
+# Python environments and caches
+/.venv/
+/venv/
+/env/
+.env
+.env.*
+.tox/
+.nox/
+.cache/
+*.egg-info/
+/build/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use these animations or their source, please cite this repository."
+title: "CYGNO Directional Dark Matter Animations"
+version: 1.0.0
+authors:
+  - name: "CYGNO animation contributors"
+license:
+  - BSD-3-Clause
+  - CC-BY-4.0
+keywords:
+  - dark matter
+  - directional detection
+  - time projection chamber
+  - scientific animation

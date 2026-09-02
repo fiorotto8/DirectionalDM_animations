@@ -1,0 +1,22 @@
+version = 1
+SPDX-PackageName = "cygno-directional-animations"
+
+[[annotations]]
+path = [
+  "config/**",
+  "cygno_anim/**",
+  "scenes/**",
+  "scripts/**",
+  ".gitattributes",
+  ".gitignore",
+  "requirements.txt",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 CYGNO animation contributors"
+SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = ["README.md", "CITATION.cff", "THIRD_PARTY_NOTICES.md", "TRADEMARKS.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 CYGNO animation contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
