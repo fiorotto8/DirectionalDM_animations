@@ -421,7 +421,7 @@ class TPCReadout(ScientificScene):
         ).move_to([4.25, 0.82, 0])
         image_title = label("qCMOS: x–y shape + charge asymmetry", color=CYGNUS, scale=0.21, weight="BOLD")
         image_title.next_to(image_panel, UP, buff=0.10)
-        provenance = label("Illustrative detector response", color=MUTED, scale=0.18)
+        provenance = label("Light signals from one recoil", color=MUTED, scale=0.18)
         provenance.next_to(image_title, UP, buff=0.10)
         glow_track = VGroup()
         mock_nr = diffuse_track(simulate_nr_track(seed=211), sigma=0.065, seed=212)

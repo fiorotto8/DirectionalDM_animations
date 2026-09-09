@@ -29,12 +29,15 @@ from manim import (
     ReplacementTransform,
     Restore,
     RoundedRectangle,
-    SurroundingRectangle,
     Text,
     Transform,
     VGroup,
     VMobject,
     Write,
+    UpdateFromAlphaFunc,
+    Succession,
+    linear,
+    smooth,
     interpolate_color,
 )
 
@@ -117,17 +120,31 @@ class CYGNO04FullTrack(MovingCameraScene):
         recoil_nucleus.move_to(recoil_path.get_start())
         impact = Circle(radius=0.12, color=NUCLEUS, stroke_width=2.4).move_to(recoil_path.get_start())
         self.play(FadeIn(impact), FadeIn(recoil_nucleus), run_time=0.65)
-        self.play(
-            Create(recoil_path),
-            MoveAlongPath(recoil_nucleus, recoil_path),
-            LaggedStart(*[FadeIn(dot) for dot in primary_electrons], lag_ratio=0.045),
-            run_time=3.0,
-        )
+        full_recoil_path = recoil_path.copy()
+        samples = np.linspace(0.0, 1.0, 401)
+        positions = np.array([full_recoil_path.copy().pointwise_become_partial(
+            full_recoil_path, 0.0, t).get_end() for t in samples])
+        thresholds = [samples[np.argmin(np.linalg.norm(positions-dot.get_center(), axis=1))]
+                      for dot in primary_electrons]
+        opacities = [dot.get_fill_opacity() for dot in primary_electrons]
+        event_group = VGroup(recoil_path, recoil_nucleus, primary_electrons)
+
+        def form_primary(_group, alpha):
+            recoil_path.pointwise_become_partial(full_recoil_path, 0.0, alpha)
+            recoil_nucleus.move_to(recoil_path.get_end())
+            for dot, threshold, opacity in zip(primary_electrons, thresholds, opacities):
+                dot.set_opacity(opacity * float(np.clip((alpha-threshold)/.025, 0, 1)))
+
+        form_primary(event_group, 0)
+        self.add(event_group)
+        self.play(UpdateFromAlphaFunc(event_group, form_primary, rate_func=linear), run_time=3.0)
+        for dot, opacity in zip(primary_electrons, opacities):
+            dot.set_opacity(opacity)
         self.play(FadeOut(impact), FadeOut(recoil_nucleus), FadeIn(asymmetry_note), run_time=0.85)
         self.wait(2.3)
 
         next_phase = self.phase_label("2 · Electron drift + diffusion", ELECTRON)
-        next_phase.scale(0.82).move_to([0.0, 1.82, 0.0])
+        next_phase.scale(0.82).move_to([0.0, 1.89, 0.0])
         inactive_half = VGroup(
             detector.left_volume,
             detector.left_cage,
@@ -146,8 +163,8 @@ class CYGNO04FullTrack(MovingCameraScene):
         phase = next_phase
         self.play(FadeIn(phase, shift=UP * 0.06), run_time=0.75)
         field_arrow = semantic_arrow(
-            np.array([0.68, 1.20, 0]),
-            np.array([-1.15, 1.20, 0]),
+            np.array([0.68, 0.95, 0]),
+            np.array([-1.15, 0.95, 0]),
             "conventional E field",
             FIELD,
             label_direction=UP,
@@ -205,37 +222,7 @@ class CYGNO04FullTrack(MovingCameraScene):
             run_time=1.0,
         )
 
-        current_cloud = primary_electrons
-        stage_centres = [foil.get_center()[0] for foil in detector.right_stack]
-        avalanche_rng = np.random.default_rng(405)
-        stage_counts = (24, 52, 96)
-        stage_spreads = (0.18, 0.24, 0.31)
-        final_flash = VGroup()
-        for stage_index, (stage_x, count, spread) in enumerate(zip(stage_centres, stage_counts, stage_spreads)):
-            centre_y = float(np.mean([dot.get_center()[1] for dot in current_cloud]))
-            next_cloud = VGroup(
-                *[
-                    electron_marker((0.016, 0.012, 0.009)[stage_index]).move_to(
-                        [
-                            stage_x + 0.055,
-                            centre_y + avalanche_rng.normal(0.0, spread),
-                            0,
-                        ]
-                    )
-                    for _ in range(count)
-                ]
-            )
-            flash = self.photon_flash(np.array([stage_x, centre_y, 0]), 10 + 4 * stage_index)
-            self.play(
-                ReplacementTransform(current_cloud, next_cloud),
-                FadeIn(flash, lag_ratio=0.025),
-                run_time=1.0,
-            )
-            if stage_index < 2:
-                self.play(FadeOut(flash), run_time=0.38)
-            else:
-                final_flash = flash
-            current_cloud = next_cloud
+        current_cloud, final_flash = self.show_gem_amplification(detector, primary_electrons)
 
         avalanche_note = label(
             "large multiplication · abundant scintillation",
@@ -263,7 +250,18 @@ class CYGNO04FullTrack(MovingCameraScene):
         self.wait(1.6)
 
         image_panel, image_content, waveform_panel, waveform, provenance = self.build_readout_panels()
-        self.play(FadeIn(image_panel), FadeIn(waveform_panel), run_time=1.05)
+        image_link = VMobject(color=CYGNUS, stroke_width=1.6)
+        image_link.set_points_as_corners([
+            detector.right_cameras.get_right(), [2.10, 0.20, 0], [2.10, -1.145, 0],
+            [-4.02, -1.145, 0], [-4.02, -2.10, 0], image_panel[0].get_left(),
+        ])
+        time_link = VMobject(color=PHOTON, stroke_width=1.6)
+        time_link.set_points_as_corners([
+            detector.right_pmts[-1].get_top(), [3.50, 1.40, 0],
+            [3.50, -2.10, 0], waveform_panel[0].get_right(),
+        ])
+        sensor_links = VGroup(image_link, time_link)
+        self.play(FadeIn(image_panel), FadeIn(waveform_panel), Create(sensor_links), run_time=1.05)
         self.play(
             LaggedStart(*[FadeIn(layer) for layer in image_content], lag_ratio=0.018),
             FadeIn(waveform),
@@ -290,23 +288,29 @@ class CYGNO04FullTrack(MovingCameraScene):
             detector.cathode_label,
             detector.right_gem_label,
         )
+        # Lift the image first, then move the waveform into the cleared space.
         self.play(
-            Restore(self.camera.frame),
+            Restore(self.camera.frame, rate_func=lambda t: smooth(min(2*t, 1.0))),
             FadeOut(active_detector),
             FadeOut(recoil_path),
             FadeOut(current_cloud),
             FadeOut(phase),
-            FadeOut(image_panel),
-            FadeOut(image_content),
-            FadeOut(waveform_panel),
-            FadeOut(waveform),
-            FadeOut(provenance),
-            FadeIn(chain.header, shift=DOWN * 0.08),
+            FadeOut(sensor_links),
+            ReplacementTransform(image_panel[0], chain.image_source[0], rate_func=lambda t: smooth(min(2*t, 1.0))),
+            ReplacementTransform(image_content, chain.image_source[2], rate_func=lambda t: smooth(min(2*t, 1.0))),
+            FadeOut(image_panel[1]),
+            Succession(FadeOut(VGroup(image_panel[2], image_panel[3]), run_time=1.2),
+                       FadeIn(chain.image_source[1], run_time=1.2)),
+            ReplacementTransform(waveform_panel[0], chain.wave_source[0], rate_func=lambda t: smooth(max(2*t-1, 0.0))),
+            ReplacementTransform(waveform_panel[2], chain.wave_source[2], rate_func=lambda t: smooth(max(2*t-1, 0.0))),
+            ReplacementTransform(waveform, chain.wave_source[3], rate_func=lambda t: smooth(max(2*t-1, 0.0))),
+            Succession(FadeOut(VGroup(waveform_panel[1], waveform_panel[3]), run_time=1.2),
+                       FadeIn(chain.wave_source[1], run_time=1.2)),
+            ReplacementTransform(provenance, chain.provenance),
             run_time=2.4,
         )
         self.play(
-            FadeIn(chain.sources, shift=RIGHT * 0.10),
-            FadeIn(chain.provenance, shift=UP * 0.05),
+            FadeIn(chain.header, shift=DOWN * 0.08),
             FadeIn(chain.daq, shift=RIGHT * 0.08),
             Create(chain.image_link),
             Create(chain.wave_link),
@@ -322,23 +326,23 @@ class CYGNO04FullTrack(MovingCameraScene):
             MoveAlongPath(chain.wave_packet, chain.wave_path),
             run_time=2.0,
         )
-        self.play(
-            FadeOut(chain.image_packet),
-            FadeOut(chain.wave_packet),
-            Indicate(chain.daq, color=ELECTRON),
-            Create(chain.cloud_link),
-            FadeIn(chain.cloud, shift=LEFT * 0.10),
-            FadeIn(chain.event_packet),
-            run_time=1.4,
-        )
+        self.play(FadeOut(chain.image_packet), FadeOut(chain.wave_packet),
+                  Indicate(chain.daq, color=ELECTRON), FadeIn(chain.local_record), run_time=1.2)
+        self.wait(1.3)
+        self.play(Create(chain.cloud_link), FadeIn(chain.cloud),
+                  FadeIn(chain.event_packet), run_time=1.2)
         self.play(MoveAlongPath(chain.event_packet, chain.event_path), run_time=2.0)
-        self.play(
-            FadeOut(chain.event_packet),
-            Indicate(chain.cloud, color=CYGNUS),
-            Create(chain.reconstruction_link),
-            FadeIn(chain.reconstruction, shift=LEFT * 0.10),
-            run_time=1.7,
-        )
+        self.play(FadeOut(chain.event_packet), Indicate(chain.cloud, color=CYGNUS),
+                  FadeIn(chain.archive), run_time=1.2)
+        self.wait(2.5)
+
+        offline_header = VGroup(
+            label("CYGNO-04", color=CYGNUS, scale=.22, weight="BOLD"),
+            label("Offline analysis of stored events", color=FOREGROUND, scale=.40, weight="BOLD"),
+        ).arrange(DOWN, aligned_edge=LEFT, buff=.10).move_to(chain.header)
+        self.play(Succession(FadeOut(chain.header, run_time=.6), FadeIn(offline_header, run_time=.8)),
+                  Create(chain.reconstruction_link), FadeIn(chain.reconstruction), run_time=1.4)
+        chain.header = offline_header
         self.wait(2.0)
         self.show_reconstruction(chain)
 
@@ -386,7 +390,7 @@ class CYGNO04FullTrack(MovingCameraScene):
         right_cameras, right_pmts = self.sensor_end(1, centre_x + volume_width + 0.60, centre_y)
 
         cathode_label = label("central cathode", color=FOREGROUND, scale=0.18)
-        cathode_label.next_to(cathode, UP, buff=0.08)
+        cathode_label.next_to(cathode, UP, buff=0.28).shift(LEFT * 0.65)
         left_gem_label = label("triple GEM", color=GEM, scale=0.18, weight="BOLD")
         left_gem_label.next_to(left_stack, DOWN, buff=0.12)
         right_gem_label = label("triple GEM", color=GEM, scale=0.18, weight="BOLD")
@@ -542,7 +546,6 @@ class CYGNO04FullTrack(MovingCameraScene):
             np.array([-2.18, -2.10, 0]),
             width=2.66,
             height=0.78,
-            seed=412,
         )
         image_note = label("light gradient · charge proxy", color=NUCLEUS, scale=0.16, weight="BOLD")
         image_note.move_to([-2.18, -2.69, 0])
@@ -570,9 +573,9 @@ class CYGNO04FullTrack(MovingCameraScene):
             height=0.80,
         )
         provenance = label(
-            "Illustrative detector response",
-            color=MUTED,
-            scale=0.18,
+            "One event · two readouts",
+            color=FOREGROUND,
+            scale=0.20,
         ).move_to([-0.20, -2.92, 0])
         return image_panel, image_content, waveform_panel, waveform, provenance
 
@@ -581,11 +584,10 @@ class CYGNO04FullTrack(MovingCameraScene):
         centre: np.ndarray,
         width: float,
         height: float,
-        seed: int,
     ) -> VGroup:
         """Layered qCMOS pattern after diffusion and GEM optical projection."""
 
-        mock = diffuse_track(simulate_nr_track(seed=410), sigma=0.060, seed=seed)
+        mock = self.illustrated_event()
         points = mock.points - mock.points.mean(axis=0)
         angle = np.deg2rad(-19.0)
         rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
@@ -600,73 +602,55 @@ class CYGNO04FullTrack(MovingCameraScene):
             )
         )
         weights = mock.weights / mock.weights.max()
-        rng = np.random.default_rng(seed + 1)
+        rng = np.random.default_rng(413)
 
-        glow = VGroup()
-        spine = VGroup()
-        grains = VGroup()
+        # Integrate a diffuse light field onto camera pixels. No lines connect
+        # the samples; diffusion and counting fluctuations supply the profile.
+        cols, rows = 80, 38
+        dx, dy = width/cols, height/rows
+        xs = np.linspace(centre[0]-width/2+dx/2, centre[0]+width/2-dx/2, cols)
+        ys = np.linspace(centre[1]-height/2+dy/2, centre[1]+height/2-dy/2, rows)
+        xx, yy = np.meshgrid(xs, ys)
+        field = np.zeros_like(xx)
+        colour_field = np.zeros_like(xx)
+        mapped = centre + .78*(mapped-centre)
+        sigma = width*.022
         for index, (point, weight) in enumerate(zip(mapped, weights)):
-            fraction = index / max(len(mapped) - 1, 1)
-            colour = interpolate_color(ManimColor(NUCLEUS), ManimColor(CYGNUS), fraction)
-            glow.add(
-                Circle(
-                    radius=0.040 + 0.040 * weight,
-                    stroke_width=0,
-                    fill_color=colour,
-                    fill_opacity=0.055 + 0.075 * weight,
-                ).move_to(point)
-            )
-            grains.add(
-                Dot(point, radius=0.010 + 0.017 * weight, color=colour).set_opacity(0.55 + 0.42 * weight)
-            )
-            # A few low-opacity photoelectron grains give the image a camera
-            # texture without changing the simulated longitudinal profile.
-            for _ in range(1 + int(2 * weight)):
-                offset = np.array(
-                    [rng.normal(0.0, 0.020), rng.normal(0.0, 0.027), 0]
-                )
-                grains.add(
-                    Dot(point + offset, radius=0.006 + 0.007 * weight, color=PHOTON).set_opacity(0.20 + 0.36 * weight)
-                )
-            if index:
-                spine.add(
-                    Line(mapped[index - 1], point, color=colour, stroke_width=4.5 + 2.5 * weight).set_opacity(0.11)
-                )
-                spine.add(
-                    Line(mapped[index - 1], point, color=colour, stroke_width=1.0 + 1.2 * weight).set_opacity(0.58)
-                )
-        return VGroup(glow, spine, grains)
+            light = weight*np.exp(-((xx-point[0])**2+(yy-point[1])**2)/(2*sigma**2))
+            field += light
+            colour_field += light*index/max(len(mapped)-1,1)
+        fractions = colour_field/np.maximum(field,1e-9)
+        field /= max(float(field.max()),1e-9)
+        counts = rng.poisson(field*45)
+        pixels = VGroup()
+        for row in range(rows):
+            strip = VGroup()
+            for col in range(cols):
+                if counts[row,col] < 2:
+                    continue
+                intensity = min(1.0, counts[row,col]/45)**.65
+                colour = interpolate_color(ManimColor(NUCLEUS), ManimColor(CYGNUS), fractions[row,col])
+                strip.add(Rectangle(width=dx*.98, height=dy*.98, stroke_width=0,
+                                    fill_color=colour, fill_opacity=.95*intensity)
+                          .move_to([xx[row,col], yy[row,col], 0]))
+            pixels.add(strip)
+        return pixels
 
     def build_time_profile(self, centre: np.ndarray, width: float, height: float) -> VMobject:
-        """Return a single, unfilled PMT pulse profile.
-
-        A difference of exponentials gives the conventional fast rise and
-        slower decay.  Keep this as one clean trace: the PMT timing panel is a
-        schematic data product, not a multi-channel oscilloscope animation.
-        """
-
-        samples = np.linspace(0.0, 1.0, 140)
-        start = 0.16
-        tau_rise = 0.022
-        tau_fall = 0.18
-        values = np.zeros_like(samples)
-        after_start = samples > start
-        elapsed = samples[after_start] - start
-        values[after_start] = np.exp(-elapsed / tau_fall) - np.exp(-elapsed / tau_rise)
-        values /= max(float(values.max()), 1e-9)
-
-        baseline_y = centre[1] - height / 2
-        points = [
-            [
-                centre[0] - width / 2 + width * t,
-                baseline_y + height * 0.82 * pulse,
-                0,
-            ]
-            for t, pulse in zip(samples, values)
-        ]
-        trace = VMobject(color=PHOTON, stroke_width=2.6)
-        trace.set_points_smoothly(points)
-        return trace
+        """A repeatable pulse with substructure and baseline fluctuations."""
+        samples = np.linspace(0,1,260)
+        elapsed = np.maximum(samples-.16,0)
+        values = np.exp(-elapsed/.18)-np.exp(-elapsed/.022)
+        values += .14*np.exp(-((samples-.32)/.023)**2)
+        values += .09*np.exp(-((samples-.46)/.038)**2)
+        rng = np.random.default_rng(414)
+        noise = np.convolve(rng.normal(size=len(samples)), [.2,.6,.2], mode="same")
+        values += noise*(.018+.095*values)
+        values /= max(float(values.max()),1e-9)
+        baseline = centre[1]-height/2+.03*height
+        points = [[centre[0]-width/2+width*t, baseline+height*.82*v,0]
+                  for t,v in zip(samples,values)]
+        return VMobject(color=PHOTON, stroke_width=2.2).set_points_as_corners(points)
 
     def mini_image_packet(self, centre: np.ndarray) -> VGroup:
         frame = RoundedRectangle(
@@ -700,17 +684,8 @@ class CYGNO04FullTrack(MovingCameraScene):
             fill_color=BACKGROUND,
             fill_opacity=0.96,
         ).move_to(centre)
-        wave = VMobject(color=PHOTON, stroke_width=1.5)
-        wave.set_points_smoothly(
-            [
-                centre + np.array([-0.23, -0.09, 0]),
-                centre + np.array([-0.12, -0.09, 0]),
-                centre + np.array([-0.05, 0.02, 0]),
-                centre + np.array([0.03, 0.12, 0]),
-                centre + np.array([0.11, -0.01, 0]),
-                centre + np.array([0.22, -0.09, 0]),
-            ]
-        )
+        wave = self.build_time_profile(centre, width=.46, height=.23)
+        wave.set_stroke(width=1.2)
         return VGroup(frame, wave)
 
     def event_packet(self, centre: np.ndarray, scale: float = 1.0) -> VGroup:
@@ -739,7 +714,7 @@ class CYGNO04FullTrack(MovingCameraScene):
 
     def build_signal_chain(self) -> VGroup:
         kicker = label("CYGNO-04", color=CYGNUS, scale=0.22, weight="BOLD")
-        title = label("From optical signals to a 3D recoil axis", color=FOREGROUND, scale=0.40, weight="BOLD")
+        title = label("Trigger, record and store the event", color=FOREGROUND, scale=0.40, weight="BOLD")
         header = VGroup(kicker, title).arrange(DOWN, aligned_edge=LEFT, buff=0.10)
         header.move_to([-2.35, 3.17, 0])
 
@@ -757,8 +732,7 @@ class CYGNO04FullTrack(MovingCameraScene):
         image_content = self.build_projected_light_pattern(
             np.array([-5.18, 0.82, 0]),
             width=1.72,
-            height=0.72,
-            seed=416,
+            height=1.72 * 0.78 / 2.66,
         )
 
         wave_box = RoundedRectangle(
@@ -778,16 +752,10 @@ class CYGNO04FullTrack(MovingCameraScene):
             width=1.66,
             height=0.60,
         )
-        sources = VGroup(
-            image_box,
-            image_title,
-            image_content,
-            wave_box,
-            wave_title,
-            wave_baseline,
-            wave_content,
-        )
-        provenance = label("Illustrative detector response", color=MUTED, scale=0.18)
+        image_source = VGroup(image_box, image_title, image_content)
+        wave_source = VGroup(wave_box, wave_title, wave_baseline, wave_content)
+        sources = VGroup(image_source, wave_source)
+        provenance = label("One event · two readouts", color=MUTED, scale=0.18)
         provenance.move_to([-5.18, -1.72, 0])
 
         daq_centre = np.array([-1.86, 0.0, 0])
@@ -800,8 +768,8 @@ class CYGNO04FullTrack(MovingCameraScene):
                 fill_opacity=0.06,
             ).move_to(daq_centre),
             Arc(radius=0.61, start_angle=0.25, angle=5.4, color=CYGNUS, stroke_width=2.0).move_to(daq_centre),
-            label("DAQ", color=FOREGROUND, scale=0.25, weight="BOLD").move_to(daq_centre + UP * 0.12),
-            label("event building", color=MUTED, scale=0.15).move_to(daq_centre + DOWN * 0.24),
+            label("Trigger + DAQ", color=FOREGROUND, scale=0.21, weight="BOLD").move_to(daq_centre + UP * 0.12),
+            label("Select + record", color=MUTED, scale=0.16).move_to(daq_centre + DOWN * 0.24),
         )
 
         image_link = CubicBezier(
@@ -853,27 +821,16 @@ class CYGNO04FullTrack(MovingCameraScene):
             Arrow(origin, origin + np.array([0.0, 1.20, 0]), buff=0, color=ELECTRON, stroke_width=1.4, tip_length=0.10),
             Arrow(origin, origin + np.array([-0.34, 0.48, 0]), buff=0, color=PHOTON, stroke_width=1.4, tip_length=0.10),
         )
-        recoil_points = [
-            reconstruction_centre + np.array([-0.54 + 0.14 * index, -0.30 + 0.105 * index, 0])
-            for index in range(9)
-        ]
-        recoil = VGroup(
-            *[
-                Dot(
-                    point,
-                    radius=0.035 - 0.014 * index / 8,
-                    color=interpolate_color(ManimColor(NUCLEUS), ManimColor(CYGNUS), index / 8),
-                )
-                for index, point in enumerate(recoil_points)
-            ],
-            Line(
-                recoil_points[0] + UP * 0.14,
-                recoil_points[-1] + UP * 0.14,
-                color=NUCLEUS,
-                stroke_width=2.4,
-            ),
-        )
-        reconstruction_title = label("3D recoil axis", color=NUCLEUS, scale=0.22, weight="BOLD")
+        recoil_points, _, recoil_weights = self.event_view_points(
+            reconstruction_centre + np.array([-0.65, -0.95, 0]), scale=0.48)
+        recoil = VGroup(*[
+            Dot(point, radius=0.020 + .018 * weight,
+                color=interpolate_color(ManimColor(NUCLEUS), ManimColor(CYGNUS), i/(len(recoil_points)-1)))
+            for i, (point, weight) in enumerate(zip(recoil_points, recoil_weights))
+        ])
+        recoil.add(Line(recoil_points[0] + RIGHT*.08, recoil_points[-1] + RIGHT*.08,
+                        color=NUCLEUS, stroke_width=2.0))
+        reconstruction_title = label("Offline analysis", color=NUCLEUS, scale=0.22, weight="BOLD")
         reconstruction_title.move_to(reconstruction_centre + UP * 0.94)
         reconstruction = VGroup(reconstruction_box, axes, recoil, reconstruction_title)
         reconstruction_link = Arrow(
@@ -885,6 +842,13 @@ class CYGNO04FullTrack(MovingCameraScene):
             tip_length=0.13,
         )
 
+        local_record = self.event_packet(np.array([-1.86,-1.25,0]), scale=.75)
+        record_label = label("Recorded event", color=ELECTRON, scale=.18).next_to(local_record, DOWN, buff=.12)
+        local_record.add(record_label)
+        archive = VGroup(*[self.event_packet(np.array([.65+.24*i,-1.1-.10*i,0]),scale=.65)
+                           for i in range(3)])
+        archive_label = label("Stored events", color=CYGNUS, scale=.18).next_to(archive, DOWN, buff=.12)
+        archive.add(archive_label)
         group = VGroup(
             header,
             sources,
@@ -897,8 +861,12 @@ class CYGNO04FullTrack(MovingCameraScene):
             reconstruction_link,
             reconstruction,
         )
+        group.local_record = local_record
+        group.archive = archive
         group.header = header
         group.sources = sources
+        group.image_source = image_source
+        group.wave_source = wave_source
         group.provenance = provenance
         group.daq = daq
         group.image_link = image_link
@@ -916,321 +884,169 @@ class CYGNO04FullTrack(MovingCameraScene):
         return group
 
     def build_cloud_icon(self, centre: np.ndarray, scale: float = 1.0) -> VGroup:
-        cloud = VGroup(
-            Circle(
-                radius=0.48 * scale,
-                stroke_color=CYGNUS,
-                stroke_width=1.4,
-                fill_color=CYGNUS,
-                fill_opacity=0.14,
-            ).move_to(centre + np.array([-0.45, 0.12, 0]) * scale),
-            Circle(
-                radius=0.62 * scale,
-                stroke_color=CYGNUS,
-                stroke_width=1.4,
-                fill_color=CYGNUS,
-                fill_opacity=0.14,
-            ).move_to(centre + np.array([0.0, 0.24, 0]) * scale),
-            Circle(
-                radius=0.45 * scale,
-                stroke_color=CYGNUS,
-                stroke_width=1.4,
-                fill_color=CYGNUS,
-                fill_opacity=0.14,
-            ).move_to(centre + np.array([0.47, 0.10, 0]) * scale),
-            RoundedRectangle(
-                width=1.80 * scale,
-                height=0.68 * scale,
-                corner_radius=0.25 * scale,
-                stroke_color=CYGNUS,
-                stroke_width=1.4,
-                fill_color=CYGNUS,
-                fill_opacity=0.14,
-            ).move_to(centre + np.array([0.0, -0.18, 0]) * scale),
-        )
-        cloud.add(label("INFN Cloud", color=FOREGROUND, scale=0.23 * scale, weight="BOLD").move_to(centre + UP * 0.18 * scale))
-        return cloud
+        outline = VMobject(stroke_color=CYGNUS, stroke_width=1.5,
+                           fill_color=PIPELINE_PANEL, fill_opacity=1.0)
+        outline.set_points_smoothly([
+            [-0.80, -0.35, 0], [-0.99, -0.08, 0], [-0.84, 0.26, 0],
+            [-0.55, 0.35, 0], [-0.36, 0.70, 0], [0.12, 0.77, 0],
+            [0.48, 0.46, 0], [0.83, 0.32, 0], [0.96, -0.05, 0],
+            [0.75, -0.35, 0], [-0.80, -0.35, 0],
+        ])
+        outline.close_path()
+        caption = label("INFN Cloud", color=FOREGROUND, scale=0.25, weight="BOLD")
+        caption.move_to([0.0, .27, 0])
+        storage = label("Data storage", color=CYGNUS, scale=.20).move_to([0,-.06,0])
+        return VGroup(outline, caption, storage).scale(scale).shift(centre)
+
+    def illustrated_event(self):
+        """One deterministic optical event, shared by all presentations."""
+        if not hasattr(self, "_optical_event"):
+            self._optical_event = diffuse_track(simulate_nr_track(seed=410), sigma=0.060, seed=412)
+        return self._optical_event
+
+    def event_view_points(self, origin, scale=1.0):
+        """Qualitative depth view of the same optical samples, not a fitted track."""
+        event = self.illustrated_event()
+        angle = np.deg2rad(-19.0)
+        rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+        xy = event.points @ rotation.T
+        xy = (xy - xy.min(axis=0)) / max(float(np.ptp(xy, axis=0).max()), 1e-6)
+        depth = np.linspace(0.08, 0.60, len(xy))
+        ground = np.column_stack((0.35 + 2.8 * xy[:, 0] - 0.58 * depth,
+                                  0.80 * depth, np.zeros(len(xy))))
+        points = ground + np.column_stack((np.zeros(len(xy)), 0.20 + 2.8 * xy[:, 1], np.zeros(len(xy))))
+        return origin + scale * points, origin + scale * ground, event.weights / event.weights.max()
+
+    def show_gem_amplification(self, detector, primary_electrons):
+        """Multiply charge at the actual foils, without changing reference frame."""
+        cloud = primary_electrons
+        centre_y = float(np.mean([dot.get_y() for dot in cloud]))
+        rng = np.random.default_rng(405)
+        for i, (foil, count) in enumerate(zip(detector.right_stack, (18, 45, 90))):
+            x = foil.get_x()
+            self.play(cloud.animate.move_to([x-.07, centre_y, 0]), run_time=.60)
+            next_cloud = VGroup(*[
+                electron_marker((.014, .012, .010)[i]).move_to(
+                    [x+.055+rng.uniform(-.025,.025), rng.normal(centre_y,.12+.035*i),0])
+                for _ in range(count)
+            ])
+            flash = self.photon_flash(np.array([x, centre_y, 0]), 10+i*3)
+            old_cloud = cloud
+            self.play(ReplacementTransform(cloud, next_cloud), FadeIn(flash),
+                      Indicate(foil, color=PHOTON, scale_factor=1.03), run_time=.85)
+            self.remove(*old_cloud.get_family())
+            self.play(FadeOut(flash), run_time=.35)
+            cloud = next_cloud
+        self.wait(.8)
+        flash = self.photon_flash(cloud.get_center(), 18)
+        self.play(FadeIn(flash), run_time=.35)
+        return cloud, flash
 
     def show_reconstruction(self, chain: VGroup):
         tableau = self.build_reconstruction_tableau()
-        detail_link = Arrow(
-            chain.cloud.get_right(),
-            tableau.direction_frame[0].get_left(),
-            buff=0.08,
-            color=CYGNUS,
-            stroke_width=2.5,
-            tip_length=0.12,
+        links = VGroup(
+            Arrow(chain.image_source.get_right(), tableau.direction_frame.get_left() + UP * 0.70,
+                  buff=0.12, color=CYGNUS, stroke_width=2.0, tip_length=0.12),
+            Arrow(chain.wave_source.get_right(), tableau.direction_frame.get_left() + DOWN * 0.65,
+                  buff=0.12, color=PHOTON, stroke_width=2.0, tip_length=0.12),
         )
         self.play(
-            ReplacementTransform(chain.header, tableau.header),
-            ReplacementTransform(chain.reconstruction_link, detail_link),
-            FadeOut(chain.reconstruction, shift=RIGHT * 0.10),
-            run_time=1.6,
+            Succession(FadeOut(chain.header, run_time=0.8), FadeIn(tableau.header, run_time=1.0)),
+            FadeOut(VGroup(chain.daq, chain.local_record, chain.archive, chain.image_link, chain.wave_link,
+                           chain.cloud, chain.cloud_link, chain.reconstruction_link,
+                           chain.reconstruction)),
+            FadeIn(tableau.direction_frame), Create(links),
+            run_time=1.8,
         )
-
-        self.play(
-            FadeIn(tableau.direction_frame, shift=LEFT * 0.10),
-            FadeIn(tableau.perspective_grid),
-            LaggedStart(*[Create(axis) for axis in tableau.axes], lag_ratio=0.12),
-            run_time=2.0,
-        )
+        self.play(FadeIn(tableau.axes), FadeIn(tableau.perspective_grid), run_time=1.0)
         self.play(
             LaggedStart(*[Create(line) for line in tableau.depth_guides], lag_ratio=0.08),
-            LaggedStart(*[FadeIn(voxel, scale=0.65) for voxel in tableau.voxels], lag_ratio=0.07),
-            run_time=2.45,
+            LaggedStart(*[FadeIn(voxel, scale=0.65) for voxel in tableau.voxels], lag_ratio=0.045),
+            run_time=2.4,
         )
+        self.play(Create(tableau.unoriented_axis), FadeIn(tableau.axis_caption), run_time=1.0)
+        self.wait(1.5)
         self.play(
-            Create(tableau.direction_arrow),
-            FadeIn(tableau.tail_label, shift=LEFT * 0.05),
-            FadeIn(tableau.head_label, shift=RIGHT * 0.05),
-            FadeIn(tableau.direction_caption, shift=UP * 0.05),
-            run_time=1.65,
+            ReplacementTransform(tableau.unoriented_axis, tableau.direction_arrow),
+            FadeOut(tableau.axis_caption),
+            FadeIn(tableau.sense_caption),
+            FadeIn(tableau.tail_label), FadeIn(tableau.head_label),
+            run_time=1.5,
         )
         self.wait(1.5)
-
-        self.play(
-            FadeIn(tableau.classification_title, shift=UP * 0.06),
-            FadeIn(tableau.er_card, shift=RIGHT * 0.08),
-            FadeIn(tableau.nr_card, shift=LEFT * 0.08),
-            Create(tableau.classification_arrow),
-            run_time=1.75,
-        )
-        self.play(
-            Indicate(tableau.nr_card, color=NUCLEUS),
-            FadeIn(tableau.outcome, shift=UP * 0.05),
-            run_time=1.15,
-        )
-        self.play(FadeIn(tableau.summary, shift=UP * 0.08), run_time=0.95)
+        self.play(FadeIn(tableau.classification_title), FadeIn(tableau.er_card),
+                  FadeIn(tableau.nr_card), run_time=1.4)
+        self.play(Indicate(tableau.nr_card, color=NUCLEUS), FadeIn(tableau.outcome), run_time=1.0)
+        self.play(FadeIn(tableau.summary), run_time=0.8)
         self.wait(5.0)
         show_brand_outro(self)
 
     def build_reconstruction_tableau(self) -> VGroup:
-        kicker = label("From INFN Cloud", color=CYGNUS, scale=0.23, weight="BOLD")
-        title = label(
-            "Joint 3D reconstruction",
-            color=FOREGROUND,
-            scale=0.43,
-            weight="BOLD",
-        )
-        header = VGroup(kicker, title).arrange(DOWN, buff=0.10).move_to([0.0, 3.26, 0])
-
-        direction_box = RoundedRectangle(
-            width=4.50,
-            height=3.38,
-            corner_radius=0.13,
-            stroke_color=NUCLEUS,
-            stroke_width=1.45,
-            fill_color=PIPELINE_PANEL,
-            fill_opacity=0.95,
-        ).move_to([3.38, 0.40, 0])
-        direction_title = label("3D recoil axis + sense estimate", color=NUCLEUS, scale=0.24, weight="BOLD")
-        direction_title.move_to([3.38, 1.86, 0])
-        direction_frame = VGroup(direction_box, direction_title)
-
-        origin = np.array([2.05, -0.82, 0])
-        x_axis = Arrow(origin, origin + np.array([2.50, 0.0, 0]), buff=0, color=CYGNUS, stroke_width=1.7, tip_length=0.12)
-        y_axis = Arrow(origin, origin + np.array([0.0, 2.20, 0]), buff=0, color=ELECTRON, stroke_width=1.7, tip_length=0.12)
-        z_axis = Arrow(origin, origin + np.array([-0.72, 1.02, 0]), buff=0, color=PHOTON, stroke_width=1.7, tip_length=0.12)
-        axis_labels = VGroup(
-            label("x", color=CYGNUS, scale=0.18, weight="BOLD").next_to(x_axis.get_end(), RIGHT, buff=0.05),
-            label("y", color=ELECTRON, scale=0.18, weight="BOLD").next_to(y_axis.get_end(), UP, buff=0.04),
-            label("z", color=PHOTON, scale=0.18, weight="BOLD").next_to(z_axis.get_end(), LEFT, buff=0.04),
-        )
-        axes = VGroup(x_axis, y_axis, z_axis, axis_labels)
-
-        perspective_grid = VGroup()
-        for x_fraction in (0.25, 0.50, 0.75, 1.0):
-            start = origin + np.array([2.40 * x_fraction, 0.0, 0])
-            perspective_grid.add(
-                Line(start, start + np.array([-0.66, 0.94, 0]), color=MUTED, stroke_width=0.55).set_opacity(0.16)
-            )
-        for z_fraction in (0.25, 0.50, 0.75, 1.0):
-            start = origin + np.array([-0.66 * z_fraction, 0.94 * z_fraction, 0])
-            perspective_grid.add(
-                Line(start, start + np.array([2.40, 0.0, 0]), color=MUTED, stroke_width=0.55).set_opacity(0.16)
-            )
-
-        ex = np.array([1.0, 0.0, 0])
-        ey = np.array([0.0, 1.0, 0])
-        ez = np.array([-0.58, 0.80, 0])
-        track_points = []
-        ground_points = []
-        voxels = VGroup()
-        depth_guides = VGroup()
-        for index, t in enumerate(np.linspace(0.0, 1.0, 17)):
-            x_value = 0.32 + 2.50 * t
-            y_value = 0.22 + 0.92 * t + 0.075 * np.sin(3.2 * np.pi * t)
-            z_value = 0.10 + 0.68 * t + 0.055 * np.sin(2.2 * np.pi * t)
-            ground = origin + x_value * ex + z_value * ez
-            point = ground + y_value * ey
-            track_points.append(point)
-            ground_points.append(ground)
-            colour = interpolate_color(ManimColor(NUCLEUS), ManimColor(CYGNUS), t)
-            charge_weight = 1.0 - 0.62 * t
-            halo = Circle(
-                radius=0.070 + 0.030 * charge_weight,
-                stroke_width=0,
-                fill_color=colour,
-                fill_opacity=0.10,
-            ).move_to(point)
-            core = Dot(point, radius=0.020 + 0.020 * charge_weight, color=colour).set_opacity(0.94)
-            voxels.add(VGroup(halo, core))
-            if index in (0, 4, 8, 12, 16):
-                depth_guides.add(
-                    DashedLine(
-                        ground,
-                        point,
-                        color=ELECTRON,
-                        stroke_width=0.8,
-                        dash_length=0.045,
-                    ).set_opacity(0.30)
-                )
-        arrow_offset = np.array([0.0, 0.15, 0])
-        direction_arrow = Arrow(
-            track_points[0] + arrow_offset,
-            track_points[-1] + arrow_offset,
-            buff=0.03,
-            color=NUCLEUS,
-            stroke_width=3.6,
-            tip_length=0.18,
-        )
-        tail_label = label("Tail", color=NUCLEUS, scale=0.19, weight="BOLD")
-        tail_label.move_to(track_points[0] + np.array([0.22, -0.17, 0]))
-        head_label = label("Head", color=CYGNUS, scale=0.19, weight="BOLD")
-        head_label.next_to(track_points[-1], RIGHT, buff=0.10).shift(UP * 0.10)
-        direction_caption = label(
-            "x–y + z · charge asymmetry → head–tail estimate",
-            color=FOREGROUND,
-            scale=0.18,
-            weight="BOLD",
-        ).move_to([3.38, -1.05, 0])
-        VGroup(
-            direction_frame,
-            perspective_grid,
-            axes,
-            depth_guides,
-            voxels,
-            direction_arrow,
-            tail_label,
-            head_label,
-            direction_caption,
-        ).shift(RIGHT * 0.92)
-
-        classification_title = label(
-            "ER / NR topology separation",
-            color=FOREGROUND,
-            scale=0.22,
-            weight="BOLD",
-        ).move_to([2.25, -1.73, 0])
-        er_box = RoundedRectangle(
-            width=2.45,
-            height=0.92,
-            corner_radius=0.09,
-            stroke_color=MUTED,
-            stroke_width=1.15,
-            fill_color=MUTED,
-            fill_opacity=0.055,
-        ).move_to([0.72, -2.50, 0])
-        er_track = VMobject(color=MUTED, stroke_width=1.7)
-        er_track.set_points_smoothly(
-            [
-                [-0.30, -2.60, 0],
-                [-0.18, -2.36, 0],
-                [-0.05, -2.65, 0],
-                [0.11, -2.33, 0],
-                [0.30, -2.58, 0],
-            ]
-        )
-        er_card = VGroup(
-            er_box,
-            er_track,
-            label("ER-like\nDiffuse / tortuous", color=MUTED, scale=0.18, weight="BOLD").move_to([1.20, -2.50, 0]),
-        )
-
-        nr_box = RoundedRectangle(
-            width=2.55,
-            height=0.92,
-            corner_radius=0.09,
-            stroke_color=NUCLEUS,
-            stroke_width=1.55,
-            fill_color=NUCLEUS,
-            fill_opacity=0.08,
-        ).move_to([3.85, -2.50, 0])
-        nr_icon = VGroup()
-        for index in range(8):
-            t = index / 7
-            nr_icon.add(
-                Dot(
-                    [3.02 + 0.085 * index, -2.61 + 0.18 * t, 0],
-                    radius=0.025 - 0.009 * t,
-                    color=interpolate_color(ManimColor(NUCLEUS), ManimColor(CYGNUS), t),
-                )
-            )
-        nr_card = VGroup(
-            nr_box,
-            nr_icon,
-            label("NR-like\nCompact / dense", color=NUCLEUS, scale=0.18, weight="BOLD").move_to([4.38, -2.50, 0]),
-        )
-        classification_arrow = Arrow(
-            [2.08, -2.50, 0],
-            [2.55, -2.50, 0],
-            buff=0,
-            color=ELECTRON,
-            stroke_width=2.0,
-            tip_length=0.11,
-        )
-        outcome_text = label("NR-like topology", color=FOREGROUND, scale=0.18, weight="BOLD")
-        outcome_box = SurroundingRectangle(
-            outcome_text,
-            color=NUCLEUS,
-            buff=0.08,
-            corner_radius=0.05,
-            fill_color=BACKGROUND,
-            fill_opacity=0.94,
-            stroke_width=1.0,
-        )
-        outcome = VGroup(outcome_box, outcome_text).move_to([3.85, -3.12, 0])
-        summary = label(
-            "3D recoil axis · head–tail estimate",
-            color=NUCLEUS,
-            scale=0.28,
-            weight="BOLD",
-        ).move_to([-1.45, -3.38, 0])
-
-        group = VGroup(
-            header,
-            direction_frame,
-            perspective_grid,
-            axes,
-            depth_guides,
-            voxels,
-            direction_arrow,
-            tail_label,
-            head_label,
-            direction_caption,
-            classification_title,
-            er_card,
-            nr_card,
-            classification_arrow,
-            outcome,
-            summary,
-        )
-        group.header = header
-        group.direction_frame = direction_frame
-        group.perspective_grid = perspective_grid
-        group.axes = axes
-        group.depth_guides = depth_guides
-        group.voxels = voxels
-        group.direction_arrow = direction_arrow
-        group.tail_label = tail_label
-        group.head_label = head_label
-        group.direction_caption = direction_caption
-        group.classification_title = classification_title
-        group.er_card = er_card
-        group.nr_card = nr_card
-        group.classification_arrow = classification_arrow
-        group.outcome = outcome
-        group.summary = summary
+        header = VGroup(
+            label("CYGNO-04", color=CYGNUS, scale=0.23, weight="BOLD"),
+            label("Offline analysis · full 3D track", color=FOREGROUND, scale=0.43, weight="BOLD"),
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.10).move_to([0.0, 3.22, 0])
+        box = RoundedRectangle(width=7.65, height=4.30, corner_radius=0.13,
+                               stroke_color=NUCLEUS, stroke_width=1.5,
+                               fill_color=PIPELINE_PANEL, fill_opacity=0.98).move_to([2.0, 0.25, 0])
+        title = label("3D recoil axis", color=NUCLEUS, scale=0.30, weight="BOLD").move_to([2.0, 2.06, 0])
+        caption = label("Camera image + PMT timing", color=FOREGROUND, scale=0.21)
+        caption.move_to([2.0, -1.64, 0])
+        direction_frame = VGroup(box, title, caption)
+        origin = np.array([0.18, -1.40, 0])
+        ends = (origin + [3.45, 0, 0], origin + [0, 3.0, 0], origin + [-0.88, .90, 0])
+        axes = VGroup()
+        for name, end, colour, side in zip(("x", "y", "z"), ends, (CYGNUS, ELECTRON, PHOTON), (RIGHT, UP, LEFT)):
+            axis = Arrow(origin, end, buff=0, color=colour, stroke_width=1.5, tip_length=.12)
+            axes.add(axis, label(name, color=colour, scale=.22, weight="BOLD").next_to(end, side, buff=.06))
+        grid = VGroup(*[
+            Line(origin + [x, 0, 0], origin + [x-.88, .90, 0], color=MUTED, stroke_width=.6).set_opacity(.20)
+            for x in np.linspace(.45, 3.35, 7)
+        ])
+        points, ground, weights = self.event_view_points(origin)
+        voxels, guides = VGroup(), VGroup()
+        for i, (point, floor, weight) in enumerate(zip(points, ground, weights)):
+            colour = interpolate_color(ManimColor(NUCLEUS), ManimColor(CYGNUS), i/(len(points)-1))
+            voxels.add(VGroup(
+                Circle(radius=.065+.025*weight, stroke_width=0, fill_color=colour, fill_opacity=.12).move_to(point),
+                Dot(point, radius=.025+.025*weight, color=colour),
+            ))
+            if i % 5 == 0:
+                guides.add(DashedLine(floor, point, color=ELECTRON, stroke_width=.8, dash_length=.05).set_opacity(.30))
+        offset = RIGHT * .24
+        unoriented_axis = Line(points[0]+offset, points[-1]+offset, color=NUCLEUS, stroke_width=2.8)
+        direction_arrow = Arrow(points[0]+offset, points[-1]+offset, buff=0,
+                                color=NUCLEUS, stroke_width=3.0, tip_length=.16)
+        axis_caption = label("Recoil axis\nwithout a sense", color=FOREGROUND, scale=.24, weight="BOLD").move_to([4.32, .70, 0])
+        sense_caption = label("Sense estimate\nstatistical", color=NUCLEUS, scale=.24, weight="BOLD").move_to(axis_caption)
+        tail_text = label("Start / tail", color=NUCLEUS, scale=.21, weight="BOLD").move_to([-.90, 1.12, 0])
+        tail = VGroup(tail_text, DashedLine(tail_text.get_right()+RIGHT*.08, points[0]+LEFT*.08,
+                                          color=NUCLEUS, stroke_width=.9, dash_length=.05))
+        head = label("Stop / head", color=CYGNUS, scale=.21, weight="BOLD").next_to(points[-1], DOWN, buff=.18).shift(RIGHT*.50)
+        classification_title = label("Compare recoil topologies", color=FOREGROUND, scale=.24, weight="BOLD").move_to([2.0, -2.24, 0])
+        er_box = RoundedRectangle(width=3.35, height=.70, corner_radius=.09, color=MUTED,
+                                  stroke_width=1.2, fill_color=PIPELINE_PANEL, fill_opacity=.9).move_to([.06, -2.84, 0])
+        nr_box = er_box.copy().set_stroke(NUCLEUS).move_to([3.93, -2.84, 0])
+        er_label = label("ER-like\nDiffuse / tortuous", color=MUTED, scale=.21, weight="BOLD").move_to(er_box.get_center()+RIGHT*.38)
+        nr_label = label("NR-like\nCompact / dense", color=NUCLEUS, scale=.21, weight="BOLD").move_to(nr_box.get_center()+RIGHT*.38)
+        er_icon = VMobject(color=MUTED, stroke_width=1.5)
+        er_icon.set_points_smoothly([[0,0,0],[.10,.25,0],[.22,-.06,0],[.35,.20,0],[.52,.02,0]])
+        er_icon.move_to(er_box.get_left()+RIGHT*.48)
+        nr_icon = voxels.copy().set_height(.36).move_to(nr_box.get_left()+RIGHT*.48)
+        er_card, nr_card = VGroup(er_box, er_icon, er_label), VGroup(nr_box, nr_icon, nr_label)
+        outcome = label("Nuclear recoil", color=NUCLEUS, scale=.21, weight="BOLD").next_to(nr_box, DOWN, buff=.13)
+        summary = label("Recoil axis + a statistical sense estimate", color=FOREGROUND, scale=.25, weight="BOLD")
+        summary.move_to([-3.0, -3.52, 0])
+        group = VGroup(header, direction_frame, axes, grid, voxels, guides,
+                       unoriented_axis, direction_arrow, axis_caption, sense_caption,
+                       tail, head, classification_title, er_card, nr_card, outcome, summary)
+        for key, value in dict(header=header, direction_frame=direction_frame, axes=axes,
+                               perspective_grid=grid, voxels=voxels, depth_guides=guides,
+                               unoriented_axis=unoriented_axis, direction_arrow=direction_arrow,
+                               axis_caption=axis_caption, sense_caption=sense_caption,
+                               tail_label=tail, head_label=head, classification_title=classification_title,
+                               er_card=er_card, nr_card=nr_card, outcome=outcome, summary=summary).items():
+            setattr(group, key, value)
         return group
 
     def phase_label(self, text: str, color: str) -> VGroup:

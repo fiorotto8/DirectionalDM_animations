@@ -2,6 +2,10 @@ schema_version: 1
 handle: "@cygno.exp"
 page_url: "https://www.instagram.com/cygno.exp/"
 logo_path: "assets/logo/cygno-logo.jpg"
+website_url: "https://web.infn.it/cygnus/"
+website_qr_path: "assets/logo/QR_website.png"
+instagram_qr_path: "assets/logo/cygno.exp_Instagram-qr.png"
+watermark: "By Davide Fiorina via Local Qwen3.8"
 
 signature:
   width: 2.05
@@ -11,4 +15,4 @@ signature:
 
 outro:
   duration: 4.0
-  qr_width: 3.4
+  qr_width: 3.2

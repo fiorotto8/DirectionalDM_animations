@@ -21,6 +21,7 @@ from manim import (
     RoundedRectangle,
     Scene,
     Text,
+    RESAMPLING_ALGORITHMS,
     WHITE,
     config,
 )
@@ -42,6 +43,10 @@ class BrandingSettings:
     handle: str
     page_url: str
     logo_path: Path
+    website_url: str
+    website_qr_path: Path
+    instagram_qr_path: Path
+    watermark: str
     signature_width: float
     signature_height: float
     signature_margin: float
@@ -105,6 +110,10 @@ def load_branding_settings() -> BrandingSettings:
         handle=handle,
         page_url=page_url,
         logo_path=logo_path,
+        website_url=data["website_url"],
+        website_qr_path=ROOT / data["website_qr_path"],
+        instagram_qr_path=ROOT / data["instagram_qr_path"],
+        watermark=data["watermark"],
         signature_width=_positive_number(signature.get("width"), "branding.signature.width"),
         signature_height=_positive_number(signature.get("height"), "branding.signature.height"),
         signature_margin=_positive_number(signature.get("margin"), "branding.signature.margin"),
@@ -116,6 +125,9 @@ def load_branding_settings() -> BrandingSettings:
         raise ValueError(
             f"branding.outro.duration must be at least {_TRANSITION_DURATION:.1f} seconds"
         )
+    for path in (settings.website_qr_path, settings.instagram_qr_path):
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing original branding artwork: {path}")
     return settings
 
 
@@ -237,6 +249,7 @@ def add_brand_signature(scene: Scene) -> Group:
 
     setattr(scene, _SIGNATURE_ATTRIBUTE, signature)
     scene.add(signature)
+    add_author_watermark(scene, settings)
     return signature
 
 
@@ -260,57 +273,76 @@ def _qr_mobject(settings: BrandingSettings) -> ImageMobject:
     return image
 
 
+def add_author_watermark(scene: Scene, settings: BrandingSettings) -> Text:
+    """Keep the user-supplied credit at the lower-right screen edge."""
+    mark = Text(settings.watermark, font=FONT, color=FOREGROUND, weight="BOLD")
+    mark.set_opacity(.55).set_z_index(2000)
+
+    def place(mobject):
+        scale = _screen_scale(scene)
+        mobject.set_height(.105 * scale)
+        frame = _frame(scene)
+        right = frame.get_right()[0] if frame is not None else config.frame_width/2
+        bottom = frame.get_bottom()[1] if frame is not None else -config.frame_height/2
+        mobject.move_to([right-(.09*scale+mobject.width/2),
+                         bottom+.055*scale+mobject.height/2, 0])
+    place(mark)
+    mark.add_updater(place)
+    scene._cygno_author_watermark = mark
+    scene.add(mark)
+    return mark
+
+
+def _position_original_qr(path: Path, bounds, code_width: float, centre) -> ImageMobject:
+    """Align the code square while retaining the complete, undistorted raster.
+
+    Bounds locate the ink in the supplied assets, excluding the Instagram
+    handle and each image's different margins. No pixels are cropped or edited.
+    """
+    with Image.open(path) as source:
+        pixel_width, pixel_height = source.size
+    left, top, right, bottom = bounds
+    unit = code_width / (right - left)
+    image = ImageMobject(str(path)).set_width(pixel_width * unit)
+    offset = np.array([((left + right) / 2 - pixel_width / 2) * unit,
+                       (pixel_height / 2 - (top + bottom) / 2) * unit, 0])
+    image.move_to(np.asarray(centre) - offset)
+    return image
+
+
 def _build_outro(scene: Scene, settings: BrandingSettings) -> Group:
-    backdrop = Rectangle(
-        width=config.frame_width,
-        height=config.frame_height,
-        stroke_width=0,
-        fill_color=BACKGROUND,
-        fill_opacity=1.0,
-    )
+    backdrop = Rectangle(width=config.frame_width, height=config.frame_height,
+                         stroke_width=0, fill_color=BACKGROUND, fill_opacity=1)
+    logo = _logo_mobject(settings).set_height(1.05).move_to([0, 3.20, 0])
+    logo_ring = Circle(radius=logo.height/2, stroke_color=CYGNUS, stroke_width=2).move_to(logo)
+    name = Text("CYGNO EXPERIMENT", font=FONT, color=FOREGROUND, weight="BOLD").scale(.48)
+    name.move_to([0, 2.35, 0])
 
-    logo = _logo_mobject(settings)
-    logo.set_height(1.78)
-    logo_ring = Circle(
-        radius=logo.height / 2.0,
-        stroke_color=CYGNUS,
-        stroke_width=2.0,
-    ).move_to(logo)
-    logo_mark = Group(logo, logo_ring)
-    invitation = Text("Follow CYGNO", font=FONT, color=FOREGROUND, weight="BOLD").scale(0.63)
-    handle = Text(settings.handle, font=FONT, color=CYGNUS, weight="BOLD").scale(0.52)
-    page = Text(_display_url(settings.page_url), font=FONT, color=MUTED).scale(0.25)
-    identity = Group(logo_mark, invitation, handle, page).arrange(
-        DOWN, buff=0.20
-    )
-
-    qr_image = _qr_mobject(settings)
-    qr_frame = RoundedRectangle(
-        width=qr_image.width + 0.26,
-        height=qr_image.height + 0.26,
-        corner_radius=0.12,
-        stroke_color=CYGNUS,
-        stroke_width=1.8,
-        fill_color=WHITE,
-        fill_opacity=1.0,
-    ).move_to(qr_image)
-    qr_caption = Text("Instagram", font=FONT, color=FOREGROUND, weight="BOLD").scale(0.27)
-    qr_caption.next_to(qr_frame, DOWN, buff=0.16)
-    qr_group = Group(qr_frame, qr_image, qr_caption)
-
-    content = Group(identity, qr_group).arrange(RIGHT, buff=1.18)
-    content.move_to(np.zeros(3))
-    outro = Group(backdrop, content)
-
-    scale = _screen_scale(scene)
-    outro.scale(scale)
-    outro.move_to(_screen_center(scene))
+    # Both ink squares have exactly qr_width sides and share a baseline.
+    # Matching white panels retain quiet zones and the original Instagram handle.
+    website = _position_original_qr(settings.website_qr_path, (4, 3, 471, 470),
+                                    settings.qr_width, [-2.30, -.70, 0])
+    website.set_resampling_algorithm(RESAMPLING_ALGORITHMS["nearest"])
+    instagram = _position_original_qr(settings.instagram_qr_path, (235, 250, 2115, 2130),
+                                      settings.qr_width, [2.30, -.70, 0])
+    panels = Group(*[
+        RoundedRectangle(width=4.15, height=4.70, corner_radius=.16,
+                         stroke_width=0, fill_color=WHITE, fill_opacity=1)
+        .move_to([x, -1.03, 0]) for x in (-2.30, 2.30)
+    ])
+    web_title = Text("Website", font=FONT, color=FOREGROUND, weight="BOLD").scale(.36)
+    web_title.move_to([-2.30, 1.68, 0])
+    insta_title = Text("Instagram", font=FONT, color=FOREGROUND, weight="BOLD").scale(.36)
+    insta_title.move_to([2.30, 1.68, 0])
+    outro = Group(backdrop, logo, logo_ring, name, panels, website, instagram,
+                  web_title, insta_title)
+    outro.scale(_screen_scale(scene)).move_to(_screen_center(scene))
     outro.set_z_index(1100, family=True)
     return outro
 
 
 def show_brand_outro(scene: Scene) -> None:
-    """Replace the scene with the standard four-second Instagram end card."""
+    """Replace the scene with the standard four-second website/Instagram end card."""
 
     settings = load_branding_settings()
     signature = getattr(scene, _SIGNATURE_ATTRIBUTE, None)
@@ -318,7 +350,8 @@ def show_brand_outro(scene: Scene) -> None:
         signature.clear_updaters()
 
     outro = _build_outro(scene, settings)
-    current = list(scene.mobjects)
+    watermark = getattr(scene, "_cygno_author_watermark", None)
+    current = [m for m in scene.mobjects if m is not watermark]
     scene.play(
         *(FadeOut(mobject) for mobject in current),
         FadeIn(outro),

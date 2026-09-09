@@ -36,6 +36,7 @@ from manim import (
     VGroup,
     VMobject,
     Write,
+    UpdateFromAlphaFunc,
     config,
     linear,
 )
@@ -198,7 +199,7 @@ class WIMPRecoil(MovingCameraScene):
             max_tip_length_to_length_ratio=0.10,
         )
         incoming_label = Text(
-            "incoming candidate",
+            "dark-matter particle",
             font=FONT,
             color=WIMP,
         ).scale(0.36)
@@ -208,11 +209,26 @@ class WIMPRecoil(MovingCameraScene):
 
         target = nucleus_marker().move_to(collision)
         target_label = Text(
-            "target nucleus",
+            "Detector-gas nucleus\nordinary matter",
             font=FONT,
             color=RECOIL,
         ).scale(0.34)
         target_label.next_to(target, DOWN, buff=0.18)
+
+        target_atom = VGroup(
+            Circle(radius=.48, color=MUTED, stroke_width=1.2).move_to(collision),
+            Dot(collision + UP*.48, radius=.035, color=ELECTRON),
+            Dot(collision + DOWN*.48, radius=.035, color=ELECTRON),
+        )
+        gas_context = VGroup()
+        for x, y in ((-4,1.4),(-3,-1.1),(-.2,1.65),(2.8,1.6),(3.5,-1.8),(-4.2,-2.3),(1.9,-2.1)):
+            atom = VGroup(Circle(radius=.13, color=MUTED, stroke_width=1),
+                          Dot(radius=.035, color=MUTED),
+                          Dot(RIGHT*.13, radius=.025, color=ELECTRON)).move_to([x,y,0])
+            gas_context.add(atom.set_opacity(.50))
+        gas_caption = Text("Detector gas · ordinary matter", font=FONT, color=MUTED).scale(.32)
+        gas_caption.move_to([-3.65, -2.75, 0])
+        gas_context.add(gas_caption)
 
         candidate = candidate_marker().move_to(incoming_start)
         incoming_path = Line(incoming_start, collision)
@@ -227,6 +243,8 @@ class WIMPRecoil(MovingCameraScene):
             FadeIn(candidate),
             run_time=1.20,
         )
+        self.play(FadeIn(gas_context), FadeIn(target_atom), run_time=.8)
+        self.wait(1.2)
         self.play(MoveAlongPath(candidate, incoming_path, rate_func=linear), run_time=2.00)
         self.wait(0.45)
         self.play(
@@ -253,7 +271,7 @@ class WIMPRecoil(MovingCameraScene):
             max_tip_length_to_length_ratio=0.12,
         )
         outgoing_label = Text(
-            "outgoing candidate",
+            "scattered dark matter",
             font=FONT,
             color=WIMP,
         ).scale(0.34)
@@ -262,7 +280,7 @@ class WIMPRecoil(MovingCameraScene):
         p_out_label.next_to(outgoing_arrow, RIGHT, buff=0.12).shift(DOWN * 0.05)
 
         recoil_label = Text(
-            "nuclear recoil",
+            "recoiling gas nucleus",
             font=FONT,
             color=RECOIL,
         ).scale(0.35)
@@ -282,6 +300,7 @@ class WIMPRecoil(MovingCameraScene):
                 lag_ratio=0.08,
             ),
             FadeOut(target_label),
+            FadeOut(target_atom),
             FadeIn(outgoing_label),
             FadeIn(p_out_label),
             FadeIn(recoil_label),
@@ -384,7 +403,7 @@ class WIMPRecoil(MovingCameraScene):
         )
         # Hold the full collision and ensemble angular distribution before the
         # microscopic ionization close-up begins.
-        self.wait(3.20)
+        self.wait(2.20)
 
         macro_objects = VGroup(
             incoming_arrow,
@@ -411,6 +430,7 @@ class WIMPRecoil(MovingCameraScene):
             FadeOut(fixed_header),
             FadeOut(fixed_equation),
             FadeOut(macro_objects),
+            FadeOut(gas_context),
             target.animate.scale(0.47),
             run_time=1.90,
         )
@@ -432,12 +452,12 @@ class WIMPRecoil(MovingCameraScene):
         gas_atoms = VGroup(
             *[
                 Circle(
-                    radius=0.045,
+                    radius=0.075,
                     color=MUTED,
                     stroke_width=1.2,
-                    stroke_opacity=0.30,
+                    stroke_opacity=0.65,
                     fill_color=MUTED,
-                    fill_opacity=0.025,
+                    fill_opacity=0.08,
                 ).move_to(
                     recoil_end
                     + (along + 0.18) * recoil_direction
@@ -448,16 +468,18 @@ class WIMPRecoil(MovingCameraScene):
         )
         frame_scale = float(self.camera.frame.get_width() / config.frame_width)
         provenance = Text(
-            "Illustrative detector response",
+            "The recoil nucleus ionizes the detector gas",
             font=FONT,
             color=MUTED,
-        ).scale(0.22 * frame_scale)
+        ).scale(0.34 * frame_scale)
         provenance.move_to(
             self.camera.frame.get_corner(UP + LEFT)
             + RIGHT * (provenance.width / 2.0 + 0.28 * frame_scale)
             + DOWN * (provenance.height / 2.0 + 0.25 * frame_scale)
         )
-        self.play(FadeIn(gas_atoms), FadeIn(provenance), run_time=0.65)
+        ionization_note = Text("Electrons are freed; positive ions remain", font=FONT, color=ELECTRON).scale(.27*frame_scale)
+        ionization_note.next_to(provenance, DOWN, aligned_edge=LEFT, buff=.10)
+        self.play(FadeIn(gas_atoms), FadeIn(provenance), FadeIn(ionization_note), run_time=.65)
 
         distances = np.array([0.00, 0.22, 0.43, 0.61, 0.78, 0.94, 1.08, 1.21, 1.33, 1.43, 1.52])
         wiggles = np.array([0.00, 0.025, -0.035, 0.050, -0.025, 0.045, -0.055, 0.020, -0.040, 0.025, 0.00])
@@ -496,7 +518,8 @@ class WIMPRecoil(MovingCameraScene):
         electrons = VGroup()
         for index, distance in enumerate(deposit_distances):
             progress = distance / distances[-1]
-            path_point = recoil_end + distance * recoil_direction
+            path_point = (recoil_end + distance * recoil_direction
+                          + np.interp(distance, distances, wiggles) * transverse)
             side = -1.0 if index % 2 else 1.0
             ion_point = path_point + side * (0.022 + 0.007 * (index % 3)) * transverse
             electron_point = path_point + side * (0.102 + 0.015 * (index % 4)) * transverse
@@ -517,29 +540,48 @@ class WIMPRecoil(MovingCameraScene):
             electron.set_opacity(0.55 + 0.40 * (1.0 - progress))
             electrons.add(electron)
 
-        self.play(
-            Create(trail),
-            MoveAlongPath(target, trail, rate_func=linear),
-            run_time=2.10,
-        )
+        # A fixed path supplies both position and the visible trail endpoint.
+        # Deposits become visible only after the nucleus has passed their site.
+        neutral_sites = VGroup(*[
+            Circle(radius=.052, color=MUTED, stroke_width=1.1).move_to(site)
+            for site in ion_sites
+        ])
+        bound_positions = [site.get_center()+transverse*.052 for site in ion_sites]
+        free_positions = [electron.get_center().copy() for electron in electrons]
+        self.play(FadeIn(neutral_sites), run_time=.6)
+        self.wait(.9)
+        full_trail = trail.copy()
+        site_opacities = [site.get_fill_opacity() for site in ion_sites]
+        electron_opacities = [dot.get_fill_opacity() for dot in electrons]
+        formation = VGroup(trail, target, ion_sites, electrons, neutral_sites)
+
+        def form_track(_group, alpha):
+            trail.pointwise_become_partial(full_trail, 0.0, alpha)
+            position = trail.get_end()
+            target.move_to(position)
+            travelled = float(np.dot(position - recoil_end, recoil_direction))
+            for i, distance in enumerate(deposit_distances):
+                visible = float(np.clip((travelled - distance) / 0.045, 0.0, 1.0))
+                ion_sites[i].set_stroke(opacity=visible)
+                ion_sites[i].set_fill(opacity=site_opacities[i] * visible)
+                neutral_sites[i].set_opacity(.65*(1-visible))
+                electrons[i].move_to((1-visible)*bound_positions[i]+visible*free_positions[i])
+                electrons[i].set_opacity(.45*(1-visible)+electron_opacities[i]*visible)
+
+        form_track(formation, 0.0)
+        self.add(formation)
+        self.play(UpdateFromAlphaFunc(formation, form_track, rate_func=linear), run_time=3.55)
         self.wait(0.45)
-        self.play(
-            LaggedStart(
-                *[FadeIn(site, scale=0.5) for site in ion_sites],
-                lag_ratio=0.045,
-            ),
-            LaggedStart(
-                *[FadeIn(electron, scale=0.3) for electron in electrons],
-                lag_ratio=0.045,
-            ),
-            run_time=1.45,
-        )
 
         electron_key = VGroup(
             Dot(radius=0.026, color=ELECTRON),
-            Text("ionization electrons", font=FONT, color=ELECTRON).scale(0.22),
+            Text("freed electrons", font=FONT, color=ELECTRON).scale(0.22),
         ).arrange(RIGHT, buff=0.07)
-        legend = electron_key
+        ion_key = VGroup(
+            Circle(radius=0.030, color=RECOIL, stroke_width=1.5),
+            Text("positive gas ions", font=FONT, color=RECOIL).scale(0.22),
+        ).arrange(RIGHT, buff=0.07)
+        legend = VGroup(electron_key, ion_key).arrange(DOWN, aligned_edge=LEFT, buff=0.11)
         legend.move_to(closeup_centre + 1.85 * LEFT + 0.28 * DOWN)
 
         start_label = VGroup(
@@ -651,5 +693,5 @@ class WIMPRecoil(MovingCameraScene):
             FadeIn(energy_note, shift=UP * 0.04),
             run_time=1.40,
         )
-        self.wait(1.80)
+        self.wait(2.80)
         show_brand_outro(self)

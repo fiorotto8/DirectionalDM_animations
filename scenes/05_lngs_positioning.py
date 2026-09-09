@@ -1,4 +1,4 @@
-"""Locate CYGNO at LNGS and introduce shielding, services, and data flow."""
+"""Locate CYGNO at LNGS and assemble the detector, readout and shielding."""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from manim import (
     LEFT,
     RIGHT,
     UP,
-    Arrow,
-    CapStyleType,
     Circle,
     Create,
     Dot,
     FadeIn,
     FadeOut,
-    GrowArrow,
+    Group,
+    ImageMobject,
+    DashedLine,
+    linear,
     Indicate,
     LaggedStart,
     Line,
-    LineJointType,
     MoveAlongPath,
     MovingCameraScene,
     Polygon,
@@ -44,36 +44,28 @@ from cygno_anim.config import (
     load_science,
     require_nonbottom_shell_layers,
     require_numeric,
+    require_positive_integer,
     require_triplet,
 )
-from cygno_anim.detector import half_tpc
+from cygno_anim.detector import half_tpc, camera_icon, pmt_icon
 from cygno_anim.visuals import (
     BACKGROUND,
     COPPER,
     COPPER_HIGHLIGHT,
     CYGNUS,
-    DATA,
     FOREGROUND,
     GALLERY,
-    GALLERY_INNER,
-    GAS,
     HALL,
-    HIGH_VOLTAGE,
     MUTED,
-    PHOTON,
     POLYETHYLENE,
-    PORTAL_EDGE,
-    PORTAL_INNER,
+    PHOTON,
     ROAD,
     ROADBED,
     ROCK_DARK,
     ROCK_LAMP,
     ROCK_LIGHT,
     ROCK_MID,
-    ROUTE,
-    SERVICE_PANEL,
     ScientificScene,
-    TUNNEL_WALL,
     WATER,
     label,
 )
@@ -96,89 +88,6 @@ def formatted_value(value: object, unit: str = "") -> str:
         joined = " × ".join(f"{item:g}" if isinstance(item, (int, float)) else str(item) for item in value)
         return f"{joined} {unit}".strip()
     return f"{value} {unit}".strip()
-
-
-def gallery_ribbon(
-    points: list[list[float]],
-    width: float = 12.0,
-    outline_color: str = GALLERY,
-    fill_color: str = ROCK_DARK,
-    *,
-    smooth: bool = False,
-    industrial_lights: bool = False,
-    centre_glint: bool = True,
-) -> VGroup:
-    """Build an editable concrete gallery around one native centreline."""
-
-    anchors = [np.array(point, dtype=float) for point in points]
-    path = VMobject()
-    if smooth and len(anchors) > 2:
-        path.set_points_smoothly(anchors)
-    else:
-        path.set_points_as_corners(anchors)
-
-    shadow = path.copy().set_stroke(BACKGROUND, width=width + 8.0, opacity=0.74)
-    shadow.shift(RIGHT * 0.065 + DOWN * 0.085)
-    concrete = path.copy().set_stroke(outline_color, width=width + 4.0, opacity=0.98)
-    road_floor = path.copy().set_stroke(fill_color, width=width, opacity=1.0)
-    wall_glint = VGroup()
-    if centre_glint:
-        wall_glint.add(
-            path.copy().set_stroke(FOREGROUND, width=1.0, opacity=0.16)
-        )
-
-    lights = VGroup()
-    if industrial_lights:
-        for proportion in np.linspace(0.10, 0.90, 7):
-            lights.add(
-                Dot(
-                    path.point_from_proportion(float(proportion)) + UP * 0.045,
-                    radius=0.022,
-                    color=ROCK_LAMP,
-                )
-            )
-        lights.set_z_index(2)
-
-    return VGroup(shadow, concrete, road_floor, wall_glint, lights)
-
-
-def isometric_hall(
-    name: str,
-    centre: list[float],
-    width: float,
-    angle_degrees: float = 17.0,
-    color: str = GALLERY,
-    height: float = 0.57,
-) -> tuple[VGroup, VGroup]:
-    """Return a transverse capsule-shaped cavern with shallow 2.5D depth."""
-
-    shell = RoundedRectangle(
-        width=width,
-        height=height,
-        corner_radius=height / 2,
-        stroke_color=color,
-        stroke_width=2.8,
-        fill_color=ROCK_MID,
-        fill_opacity=0.96,
-    ).rotate(np.deg2rad(angle_degrees)).move_to(centre)
-    extrusion = shell.copy().set_stroke(color, width=1.8, opacity=0.70)
-    extrusion.set_fill(BACKGROUND, opacity=0.88).shift(RIGHT * 0.15 + DOWN * 0.14)
-    shadow = shell.copy().set_stroke(width=0).set_fill(BACKGROUND, opacity=0.72)
-    shadow.shift(RIGHT * 0.25 + DOWN * 0.25)
-    inner = shell.copy().scale(0.88).set_stroke(FOREGROUND, width=0.8, opacity=0.22)
-    warm_lights = VGroup(
-        *[
-            Dot([x, 0, 0], radius=0.024, color=ROCK_LAMP)
-            for x in np.linspace(-0.31 * width, 0.31 * width, 5)
-        ]
-    ).rotate(np.deg2rad(angle_degrees)).move_to(centre)
-    depth_edges = VGroup(
-        Line(shell.get_left(), extrusion.get_left(), color=color, stroke_width=1.4),
-        Line(shell.get_right(), extrusion.get_right(), color=color, stroke_width=1.4),
-    ).set_opacity(0.75)
-    hall = VGroup(shadow, extrusion, depth_edges, shell, inner, warm_lights)
-    hall_name = label(name, color=FOREGROUND, scale=0.285, weight="BOLD").move_to(centre)
-    return hall, VGroup(hall_name)
 
 
 class LNGSPositioning(MovingCameraScene):
@@ -219,149 +128,17 @@ class LNGSPositioning(MovingCameraScene):
         self.wait(3.00)
 
         mountain = VGroup(mountain_layers, highway, laboratory)
-        underground = self.underground_context()
-        map_content = VGroup(
-            underground["rock_cutaway"],
-            underground["motorway"],
-            underground["entrance"],
-            underground["route_corridors"],
-            underground["halls"],
-            underground["hall_a_label"],
-            underground["hall_b_label"],
-            underground["hall_c_label"],
-            underground["hall_f"],
-            underground["road_labels"],
-            underground["entrance_label"],
-            underground["sequence_label"],
-            underground["route_summary"],
-        )
-        route_paths = underground["route_paths"]
-        route_traces = underground["route_traces"]
-        route_marker = underground["route_marker"]
-        transformed_map = VGroup(
-            map_content,
-            route_paths,
-            route_traces,
-            route_marker,
-        )
-        map_natural_centre = map_content.get_center().copy()
-        map_scale = 0.165
-        transformed_map.scale(map_scale, about_point=map_natural_centre)
-        transformed_map.shift(laboratory.get_center() - map_natural_centre)
-
         self.play(
-            FadeOut(title),
-            FadeOut(mountain_labels),
-            FadeOut(mountain),
+            FadeOut(title), FadeOut(mountain_labels), FadeOut(mountain),
             run_time=1.10,
         )
-        self.camera.frame.set(width=default_frame_width * map_scale).move_to(laboratory)
-        self.wait(0.20)
-        self.play(
-            FadeIn(underground["rock_cutaway"]),
-            FadeIn(underground["motorway"]),
-            FadeIn(underground["road_labels"]),
-            FadeIn(underground["sequence_label"]),
-            run_time=2.30,
-        )
-        self.wait(0.90)
+        self.show_underground_route()
 
-        self.play(
-            FadeIn(route_marker),
-            FadeIn(underground["route_summary"], shift=DOWN * 0.04),
-            Create(route_traces[0]),
-            MoveAlongPath(route_marker, route_paths[0]),
-            run_time=1.80,
-        )
-        self.play(
-            Create(underground["entrance"]),
-            FadeIn(underground["entrance_label"]),
-            run_time=1.00,
-        )
-        self.play(
-            Indicate(underground["entrance"], color=CYGNUS, scale_factor=1.025),
-            run_time=0.70,
-        )
-        self.play(
-            Create(route_traces[1]),
-            MoveAlongPath(route_marker, route_paths[1]),
-            FadeOut(underground["road_labels"]),
-            run_time=2.00,
-        )
-        self.play(
-            Create(underground["route_corridors"][0]),
-            Create(route_traces[2]),
-            MoveAlongPath(route_marker, route_paths[2]),
-            run_time=2.40,
-        )
-        self.play(
-            Create(underground["route_corridors"][1]),
-            Create(route_traces[3]),
-            MoveAlongPath(route_marker, route_paths[3]),
-            run_time=1.50,
-        )
-        self.play(
-            Create(underground["route_corridors"][2]),
-            Create(route_traces[4]),
-            MoveAlongPath(route_marker, route_paths[4]),
-            FadeIn(underground["hall_c"], shift=UP * 0.08),
-            FadeIn(underground["hall_c_label"]),
-            FadeOut(underground["entrance_label"]),
-            run_time=2.70,
-        )
-        self.play(
-            Indicate(underground["hall_c_shell"], color=HALL, scale_factor=1.035),
-            run_time=0.70,
-        )
-        self.wait(0.60)
-        self.play(
-            Create(underground["route_corridors"][3]),
-            Create(route_traces[5]),
-            MoveAlongPath(route_marker, route_paths[5]),
-            FadeIn(underground["hall_b"], shift=UP * 0.08),
-            FadeIn(underground["hall_b_label"]),
-            run_time=3.00,
-        )
-        self.play(
-            Create(underground["route_corridors"][4]),
-            Create(route_traces[6]),
-            MoveAlongPath(route_marker, route_paths[6]),
-            Indicate(underground["hall_b_shell"], color=HALL, scale_factor=1.035),
-            run_time=2.40,
-        )
-        self.play(
-            Create(underground["route_corridors"][5]),
-            FadeIn(underground["hall_f"]),
-            Create(route_traces[7]),
-            MoveAlongPath(route_marker, route_paths[7]),
-            run_time=2.30,
-        )
-        self.play(
-            Indicate(underground["hall_f_shell"], color=CYGNUS, scale_factor=1.08),
-            run_time=0.90,
-        )
-        self.wait(1.00)
-
-        self.play(
-            self.camera.frame.animate.shift(LEFT * map_scale * 0.85),
-            FadeIn(underground["hall_a"], shift=UP * 0.08),
-            FadeIn(underground["hall_a_label"]),
-            run_time=1.35,
-        )
-        self.wait(1.20)
-
-        map_scene = VGroup(
-            map_content,
-            route_traces,
-            route_paths,
-            route_marker,
-        )
         shield_title = self.title_block(
             "CYGNO-04 · SHIELDING",
             "From components to assembly",
         )
         shield_base, stages = self.shielding_assembly(shielding)
-        self.play(FadeOut(map_scene), run_time=0.95)
         self.camera.frame.set(width=default_frame_width).move_to(default_frame_center)
         self.wait(0.10)
         title = shield_title
@@ -429,53 +206,6 @@ class LNGSPositioning(MovingCameraScene):
 
         self.wait(2.80)
 
-        installed = VGroup(
-            shield_base,
-            *[component for component, _, _ in stages],
-        )
-        systems_title = self.title_block("CYGNO-04 · HALL F", "Services and data path")
-        self.play(
-            FadeOut(title),
-            installed.animate.scale(0.57).shift(LEFT * 3.22 + UP * 0.12),
-            run_time=1.75,
-        )
-        title = systems_title
-        self.play(FadeIn(title), run_time=0.75)
-
-        systems, utility_lines, control_lines, data_lines, cloud, packets, packet_paths = self.hall_f_services(
-            components_by_name["DETECTOR"],
-        )
-        self.play(
-            LaggedStart(*[FadeIn(system, shift=UP * 0.08) for system in systems], lag_ratio=0.18),
-            run_time=1.70,
-        )
-        self.play(
-            LaggedStart(*[Create(line) for line in utility_lines], lag_ratio=0.18),
-            run_time=1.45,
-        )
-        self.play(
-            LaggedStart(*[Create(line) for line in control_lines], lag_ratio=0.18),
-            run_time=1.25,
-        )
-        self.play(
-            LaggedStart(*[GrowArrow(line) for line in data_lines], lag_ratio=0.22),
-            FadeIn(cloud, shift=UP * 0.10),
-            run_time=1.65,
-        )
-        self.play(FadeIn(packets), run_time=0.45)
-        self.play(
-            *[
-                MoveAlongPath(packet, path)
-                for packet, path in zip(packets, packet_paths)
-            ],
-            run_time=2.30,
-        )
-        self.play(
-            Indicate(cloud, color=DATA, scale_factor=1.05),
-            Indicate(systems[-1], color=CYGNUS, scale_factor=1.035),
-            run_time=0.95,
-        )
-        self.wait(2.20)
         show_brand_outro(self)
 
     def mountain_context(self) -> tuple[VGroup, VGroup, VGroup, VGroup]:
@@ -658,477 +388,87 @@ class LNGSPositioning(MovingCameraScene):
         )
         return mountain_layers, highway, laboratory, mountain_labels
 
-    def underground_context(
-        self,
-    ) -> dict[str, object]:
-        """Build the abstract access sequence from the A24 to Hall F."""
+    def show_underground_route(self) -> None:
+        """Overlay an illustrative access route on the supplied, unaltered PNG.
 
-        rock_slab = Polygon(
-            [-6.86, 1.98, 0],
-            [-4.64, 2.55, 0],
-            [-1.46, 2.72, 0],
-            [2.08, 2.44, 0],
-            [5.92, 0.94, 0],
-            [6.78, -3.72, 0],
-            [2.22, -3.82, 0],
-            [-2.12, -3.42, 0],
-            [-6.76, -2.72, 0],
-            color=ROCK_LIGHT,
-            fill_color=ROCK_DARK,
-            fill_opacity=0.54,
-            stroke_width=1.2,
+        Coordinates below are pixels in View_exp_underground_2.png (1151x1160),
+        measured from the top left. The labelled companion reference identifies
+        A on the left, B in the middle, and C on the right. Hall F is the narrow
+        A-B connector at (638, 786)--(714, 817), above the broad access gallery.
+        These image waypoints are presentation geometry, not a surveyed route.
+        """
+        image_path = ROOT / "assets/LNGS/View_exp_underground_2.png"
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Scene 05 requires the supplied image: {image_path}")
+        illustration = ImageMobject(str(image_path)).set_height(7.1)
+        illustration.move_to([0, -0.15, 0])
+        self.play(FadeIn(illustration), run_time=1.3)
+        self.wait(1.8)
+
+        # Zoom the original image itself; the camera and branding stay fixed.
+        enlarged = illustration.copy().set_width(18.0)
+        focus = np.array([650.0 / 1151 - .5, .5 - 930.0 / 1160, 0])
+        enlarged.move_to(-focus * [enlarged.width, enlarged.height, 1])
+        self.play(illustration.animate.become(enlarged), run_time=2.6)
+
+        def pixel(x, y):
+            return illustration.get_center() + np.array([
+                (x / 1151 - .5) * illustration.width,
+                (.5 - y / 1160) * illustration.height, 0,
+            ])
+
+        header = self.title_block("LNGS", "Route to Hall F")
+        header.add_background_rectangle(color=BACKGROUND, opacity=.90, buff=.12)
+        header.set_z_index(20, family=True)
+        route_text = label(ROUTE_SEQUENCE, color=FOREGROUND, scale=.25, weight="BOLD")
+        route_text.move_to([0, -3.60, 0])
+        route_text.add_background_rectangle(color=BACKGROUND, opacity=.92, buff=.14)
+        route_text.set_z_index(20, family=True)
+
+        hall_labels = VGroup()
+        for name, anchor, centre in (
+            ("Hall A", (519, 811), (475, 778)),
+            ("Hall B", (841, 788), (903, 812)),
+            ("Hall C", (958, 865), (1027, 961)),
+        ):
+            text = label(name, color=FOREGROUND, scale=.26, weight="BOLD").move_to(pixel(*centre))
+            text.add_background_rectangle(color=BACKGROUND, opacity=.88, buff=.08)
+            leader = Line(text.get_bottom(), pixel(*anchor), color=FOREGROUND, stroke_width=1.0)
+            hall_labels.add(VGroup(leader, text))
+        hall_labels.set_z_index(12, family=True)
+        self.play(FadeIn(header), FadeIn(route_text), FadeIn(hall_labels), run_time=.9)
+        self.wait(1.0)
+
+        # Follow the entry bend and main gallery past C and B, then enter the
+        # small A-B connector. Do not mark the large foreground gallery as F.
+        route_segments = (
+            ([(982, 1104), (982, 1060), (982, 1023),
+              (979, 1006), (973, 995), (959, 985), (837, 928)], 4.4),
+            ([(837, 928), (777, 900), (716, 871), (679, 852)], 3.1),
+            ([(679, 852), (703, 841), (731, 825), (714, 816), (676, 801)], 3.0),
         )
-        slab_shadow = rock_slab.copy().set_stroke(width=0).set_fill(
-            BACKGROUND,
-            opacity=0.70,
-        )
-        slab_shadow.shift(RIGHT * 0.16 + DOWN * 0.16)
-        slab_edge = VMobject().set_points_as_corners(
-            [
-                np.array([-6.76, -2.72, 0]),
-                np.array([-2.12, -3.42, 0]),
-                np.array([2.22, -3.82, 0]),
-                np.array([6.78, -3.72, 0]),
-            ]
-        ).set_stroke(ROCK_LIGHT, width=5.0, opacity=0.38)
-        rock_cutaway = VGroup(slab_shadow, rock_slab, slab_edge).set_z_index(0)
+        marker = VGroup(
+            Dot(radius=.082, color=BACKGROUND, fill_opacity=.90),
+            Dot(radius=.048, color=CYGNUS, stroke_color=FOREGROUND, stroke_width=1),
+        ).move_to(pixel(*route_segments[0][0][0])).set_z_index(15, family=True)
+        self.play(FadeIn(marker), run_time=.4)
+        for points, duration in route_segments:
+            path = VMobject().set_points_as_corners([pixel(*point) for point in points])
+            self.play(MoveAlongPath(marker, path, rate_func=linear), run_time=duration)
+            self.wait(.55)
 
-        motorway_points = [
-            [-6.75, -2.42, 0],
-            [-4.70, -2.50, 0],
-            [-2.40, -2.58, 0],
-            [0.00, -2.70, 0],
-            [2.30, -2.82, 0],
-            [4.45, -2.94, 0],
-            [6.75, -3.06, 0],
-        ]
-        motorway_angle = np.arctan2(
-            motorway_points[-1][1] - motorway_points[0][1],
-            motorway_points[-1][0] - motorway_points[0][0],
-        )
-        motorway_tunnel = gallery_ribbon(
-            motorway_points,
-            width=15.0,
-            outline_color=ROAD,
-            fill_color=ROADBED,
-            smooth=True,
-            industrial_lights=True,
-            centre_glint=False,
-        )
-        portal_caps = VGroup(
-            *[
-                Line(
-                    np.array(endpoint) + DOWN * 0.17,
-                    np.array(endpoint) + UP * 0.17,
-                    color=ROAD,
-                    stroke_width=2.4,
-                )
-                for endpoint in (motorway_points[0], motorway_points[-1])
-            ]
-        )
-        motorway = VGroup(motorway_tunnel, portal_caps).set_z_index(1)
-
-        entrance_points = [
-            [5.35, -2.99, 0],
-            [5.10, -2.55, 0],
-            [4.70, -2.15, 0],
-        ]
-        entrance = gallery_ribbon(
-            entrance_points,
-            width=11.0,
-            outline_color=GALLERY,
-            fill_color=TUNNEL_WALL,
-            smooth=True,
-            industrial_lights=True,
-        ).set_z_index(2)
-
-        route_segment_points = [
-            [[6.55, -3.05, 0], [5.35, -2.99, 0]],
-            entrance_points,
-            [
-                [4.70, -2.15, 0],
-                [4.58, -1.91, 0],
-                [4.35, -1.76, 0],
-                [3.86, -1.72, 0],
-            ],
-            [
-                [3.86, -1.72, 0],
-                [3.91, -0.95, 0],
-            ],
-            [
-                [3.91, -0.95, 0],
-                [3.55, -0.92, 0],
-                [2.20, -0.85, 0],
-                [2.01, -0.86, 0],
-            ],
-            [
-                [2.01, -0.86, 0],
-                [0.55, -0.77, 0],
-                [-0.66, -0.74, 0],
-            ],
-            [
-                [-0.66, -0.74, 0],
-                [-0.70, -0.97, 0],
-                [-0.36, -0.34, 0],
-                [-0.05, 0.30, 0],
-            ],
-            [
-                [-0.05, 0.30, 0],
-                [-0.38, 0.28, 0],
-                [-0.75, 0.28, 0],
-            ],
-        ]
-        corridor_specs = (
-            (route_segment_points[2], 10.0, GALLERY, GALLERY_INNER),
-            (route_segment_points[3], 10.0, GALLERY, GALLERY_INNER),
-            (route_segment_points[4], 15.0, PORTAL_EDGE, PORTAL_INNER),
-            (route_segment_points[5], 15.0, PORTAL_EDGE, PORTAL_INNER),
-            (route_segment_points[6], 10.0, GALLERY, GALLERY_INNER),
-            (route_segment_points[7], 8.0, HALL, ROCK_MID),
-        )
-        route_corridors = VGroup(
-            *[
-                gallery_ribbon(
-                    points,
-                    width=width,
-                    outline_color=outline,
-                    fill_color=fill,
-                    smooth=True,
-                    industrial_lights=True,
-                )
-                for points, width, outline, fill in corridor_specs
-            ]
-        ).set_z_index(2)
-
-        hall_angle = 63.0
-        hall_a, label_a = isometric_hall(
-            "HALL A · CONTEXT",
-            [-2.70, 0.43, 0],
-            2.85,
-            hall_angle,
-            height=0.57,
-        )
-        hall_b, label_b = isometric_hall(
-            "4 · HALL B",
-            [-0.05, 0.30, 0],
-            2.85,
-            hall_angle,
-            height=0.57,
-        )
-        hall_c, label_c = isometric_hall(
-            "3 · HALL C",
-            [2.62, 0.17, 0],
-            2.85,
-            hall_angle,
-            height=0.57,
-        )
-        halls = VGroup(hall_a, hall_b, hall_c).set_z_index(3)
-
-        label_a.move_to([-2.04, 1.91, 0])
-        label_b.move_to([0.61, 1.77, 0])
-        label_c.move_to([3.29, 1.64, 0])
-        hall_label_leaders = VGroup(
-            Line([-2.10, 1.77, 0], [-2.05, 1.65, 0], color=GALLERY, stroke_width=1.5),
-            Line([0.55, 1.64, 0], [0.60, 1.52, 0], color=GALLERY, stroke_width=1.5),
-            Line([3.23, 1.51, 0], [3.28, 1.39, 0], color=GALLERY, stroke_width=1.5),
-        )
-        hall_a_label = VGroup(label_a, hall_label_leaders[0]).set_z_index(6)
-        hall_b_label = VGroup(label_b, hall_label_leaders[1]).set_z_index(6)
-        hall_c_label = VGroup(label_c, hall_label_leaders[2]).set_z_index(6)
-
-        hall_f_shell = RoundedRectangle(
-            width=1.44,
-            height=0.36,
-            corner_radius=0.025,
-            stroke_color=HALL,
-            stroke_width=2.8,
-            fill_color=ROCK_MID,
-            fill_opacity=0.98,
-        ).rotate(np.deg2rad(4.0)).move_to([-1.10, 0.28, 0])
-        hall_f_extrusion = hall_f_shell.copy().set_fill(BACKGROUND, opacity=0.86)
-        hall_f_extrusion.set_stroke(HALL, width=1.5, opacity=0.64)
-        hall_f_extrusion.shift(RIGHT * 0.11 + DOWN * 0.10)
-        hall_f_inner = hall_f_shell.copy().scale(0.91).stretch(0.73, dim=1)
-        hall_f_inner.set_stroke(FOREGROUND, width=0.7, opacity=0.20).set_fill(opacity=0.0)
-        hall_f_lights = VGroup(
-            *[
-                Dot([x, 0, 0], radius=0.022, color=ROCK_LAMP)
-                for x in (-0.45, -0.15, 0.15, 0.45)
-            ]
-        ).rotate(np.deg2rad(4.0)).move_to(hall_f_shell)
-        hall_f_glow = hall_f_shell.copy().scale(1.05).stretch(1.10, dim=1)
-        hall_f_glow.set_stroke(CYGNUS, width=1.6, opacity=0.62).set_fill(opacity=0.0)
-        hall_f_name = label("5 · HALL F", color=FOREGROUND, scale=0.25, weight="BOLD")
-        hall_f_name.move_to([-1.10, 0.76, 0])
-        hall_f = VGroup(
-            hall_f_glow,
-            hall_f_extrusion,
-            hall_f_shell,
-            hall_f_inner,
-            hall_f_lights,
-            hall_f_name,
-        ).set_z_index(6)
-
-        a24_name = label(
-            "1 · A24 MOTORWAY TUNNEL",
-            color=ROAD,
-            scale=0.25,
-            weight="BOLD",
-        ).rotate(motorway_angle).move_to([0.15, -1.90, 0])
-        a24_leader = Line([0.05, -2.06, 0], [0.02, -2.67, 0], color=ROAD, stroke_width=1.5)
-        road_labels = VGroup(
-            a24_name,
-            a24_leader,
-        ).set_z_index(6)
-
-        lngs_entrance_name = label("2 · LNGS ENTRANCE", color=GALLERY, scale=0.23, weight="BOLD")
-        lngs_entrance_name.move_to([5.50, -1.55, 0])
-        entrance_leader = Line([5.18, -1.72, 0], [4.83, -2.27, 0], color=GALLERY, stroke_width=1.5)
-        entrance_label = VGroup(lngs_entrance_name, entrance_leader).set_z_index(6)
-
-        sequence_text = label(
-            "ACCESS SEQUENCE",
-            color=CYGNUS,
-            scale=0.20,
-            weight="BOLD",
-        )
-        sequence_plate = RoundedRectangle(
-            width=sequence_text.width + 0.24,
-            height=sequence_text.height + 0.14,
-            corner_radius=0.055,
-            stroke_color=CYGNUS,
-            stroke_width=0.7,
-            fill_color=BACKGROUND,
-            fill_opacity=0.82,
-        )
-        sequence_label = VGroup(sequence_plate, sequence_text)
-        sequence_label.move_to([-4.55, 2.24, 0]).set_z_index(8)
-
-        route_summary_text = label(
-            ROUTE_SEQUENCE,
-            color=FOREGROUND,
-            scale=0.25,
-            weight="BOLD",
-        )
-        route_summary_plate = RoundedRectangle(
-            width=route_summary_text.width + 0.34,
-            height=route_summary_text.height + 0.22,
-            corner_radius=0.07,
-            stroke_color=GALLERY,
-            stroke_width=0.9,
-            fill_color=BACKGROUND,
-            fill_opacity=0.88,
-        )
-        route_summary = VGroup(route_summary_plate, route_summary_text)
-        route_summary.move_to([1.15, 2.30, 0]).set_z_index(8)
-
-        route_color = ROUTE
-        route_paths = VGroup()
-        route_traces = VGroup()
-        for segment_points in route_segment_points:
-            anchors = [np.array(point, dtype=float) for point in segment_points]
-            route_path = VMobject()
-            if len(anchors) > 2:
-                route_path.set_points_smoothly(anchors)
-            else:
-                route_path.set_points_as_corners(anchors)
-            route_path.set_stroke(route_color, width=0.0, opacity=0.0)
-            route_path.set_cap_style(CapStyleType.ROUND)
-            route_path.joint_type = LineJointType.ROUND
-
-            route_glow = route_path.copy().set_stroke(
-                route_color,
-                width=5.2,
-                opacity=0.12,
-            )
-            route_glow.set_cap_style(CapStyleType.ROUND)
-            route_glow.joint_type = LineJointType.ROUND
-            route_line = route_path.copy().set_stroke(
-                route_color,
-                width=2.25,
-                opacity=0.96,
-            )
-            route_line.set_cap_style(CapStyleType.ROUND)
-            route_line.joint_type = LineJointType.ROUND
-            route_paths.add(route_path)
-            route_traces.add(VGroup(route_glow, route_line).set_z_index(4))
-
-        marker_glow = Circle(
-            radius=0.145,
-            stroke_color=route_color,
-            stroke_width=5.0,
-            stroke_opacity=0.20,
-        )
-        marker_ring = Circle(
-            radius=0.078,
-            stroke_color=ROAD,
-            stroke_width=1.6,
-            fill_color=SERVICE_PANEL,
-            fill_opacity=1.0,
-        )
-        marker_core = Dot(radius=0.030, color=route_color)
-        route_marker = VGroup(
-            marker_glow,
-            marker_ring,
-            marker_core,
-        ).move_to(route_paths[0].get_start()).set_z_index(7)
-
-        return {
-            "rock_cutaway": rock_cutaway,
-            "motorway": motorway,
-            "entrance": entrance,
-            "route_corridors": route_corridors,
-            "halls": halls,
-            "hall_a": hall_a,
-            "hall_b": hall_b,
-            "hall_c": hall_c,
-            "hall_a_label": hall_a_label,
-            "hall_b_label": hall_b_label,
-            "hall_c_label": hall_c_label,
-            "hall_b_shell": hall_b[3],
-            "hall_c_shell": hall_c[3],
-            "hall_f": hall_f,
-            "hall_f_shell": hall_f_shell,
-            "road_labels": road_labels,
-            "entrance_label": entrance_label,
-            "sequence_label": sequence_label,
-            "route_summary": route_summary,
-            "route_paths": route_paths,
-            "route_traces": route_traces,
-            "route_marker": route_marker,
-        }
-
-
-    def hall_f_services(
-        self,
-        detector: VGroup,
-    ) -> tuple[VGroup, VGroup, VGroup, VGroup, VGroup, VGroup, list[VMobject]]:
-        """Build a qualitative functional path without claiming placement."""
-
-        def function_node(name: str, centre: list[float], color: str) -> VGroup:
-            halo = Circle(
-                radius=0.20,
-                stroke_color=color,
-                stroke_width=4.0,
-                stroke_opacity=0.12,
-            ).move_to(centre)
-            ring = Circle(
-                radius=0.12,
-                stroke_color=color,
-                stroke_width=2.0,
-                fill_color=color,
-                fill_opacity=0.10,
-            ).move_to(centre)
-            core = Dot(centre, radius=0.038, color=color)
-            name_label = label(name, color=color, scale=0.21, weight="BOLD")
-            name_label.next_to(ring, DOWN, buff=0.13)
-            return VGroup(halo, ring, core, name_label)
-
-        readout = function_node("qCMOS + PMTs", [-0.20, 0.80, 0], CYGNUS)
-        daq = function_node("DAQ", [2.10, 0.80, 0], DATA)
-        gas = function_node("GAS", [-0.30, -1.43, 0], GAS)
-        high_voltage = function_node("HIGH VOLTAGE", [1.22, -1.43, 0], HIGH_VOLTAGE)
-        monitoring = function_node("MONITORING", [2.95, -1.43, 0], GALLERY)
-
-        cloud_centre = np.array([5.15, 0.88, 0.0])
-        cloud_lobes = VGroup(
-            Circle(radius=0.24, stroke_color=DATA, stroke_width=1.8, fill_color=DATA, fill_opacity=0.08),
-            Circle(radius=0.31, stroke_color=DATA, stroke_width=1.8, fill_color=DATA, fill_opacity=0.08).shift(RIGHT * 0.30 + UP * 0.08),
-            Circle(radius=0.23, stroke_color=DATA, stroke_width=1.8, fill_color=DATA, fill_opacity=0.08).shift(RIGHT * 0.61),
-            RoundedRectangle(
-                width=1.02,
-                height=0.36,
-                corner_radius=0.18,
-                stroke_color=DATA,
-                stroke_width=1.8,
-                fill_color=DATA,
-                fill_opacity=0.08,
-            ).shift(RIGHT * 0.30 + DOWN * 0.08),
-        ).move_to(cloud_centre)
-        cloud_name = label("INFN CLOUD", color=DATA, scale=0.235, weight="BOLD")
-        cloud_name.next_to(cloud_lobes, DOWN, buff=0.13)
-        cloud = VGroup(cloud_lobes, cloud_name)
-
-        detector_anchor = detector.get_right() + RIGHT * 0.04
-        detector_low = detector.get_bottom() + RIGHT * 0.18
-        detector_high = detector.get_top() + RIGHT * 0.14
-
-        gas_line = Line(
-            gas.get_left(),
-            detector_low + DOWN * 0.08,
-            color=GAS,
-            stroke_width=1.6,
-        ).set_opacity(0.78)
-        hv_line = Line(
-            high_voltage.get_left(),
-            detector_high + UP * 0.04,
-            color=HIGH_VOLTAGE,
-            stroke_width=1.6,
-        ).set_opacity(0.78)
-        utility_lines = VGroup(gas_line, hv_line)
-
-        monitoring_line = Line(
-            detector.get_bottom() + RIGHT * 0.38,
-            monitoring.get_left(),
-            color=GALLERY,
-            stroke_width=1.4,
-        ).set_opacity(0.68)
-        control_lines = VGroup(monitoring_line)
-
-        detector_to_readout = Arrow(
-            detector_anchor,
-            readout.get_left() + DOWN * 0.06,
-            buff=0.05,
-            color=DATA,
-            stroke_width=2.6,
-            max_tip_length_to_length_ratio=0.16,
-        )
-        readout_to_daq = Arrow(
-            readout.get_right(),
-            daq.get_left(),
-            buff=0.05,
-            color=DATA,
-            stroke_width=2.6,
-            max_tip_length_to_length_ratio=0.18,
-        )
-        daq_to_cloud = Arrow(
-            daq.get_right(),
-            cloud.get_left() + DOWN * 0.02,
-            buff=0.08,
-            color=DATA,
-            stroke_width=2.8,
-            max_tip_length_to_length_ratio=0.15,
-        )
-        data_lines = VGroup(
-            detector_to_readout,
-            readout_to_daq,
-            daq_to_cloud,
-        )
-
-        common_points = [
-            detector_anchor,
-            readout.get_center() + DOWN * 0.10,
-            daq.get_center() + UP * 0.10,
-            cloud_lobes.get_center(),
-        ]
-        image_path = VMobject().set_points_as_corners([point + UP * 0.045 for point in common_points])
-        waveform_path = VMobject().set_points_as_corners([point + DOWN * 0.045 for point in common_points])
-        image_packet = Dot(radius=0.045, color=CYGNUS)
-        waveform_packet = Dot(radius=0.045, color=PHOTON)
-        image_packet.move_to(image_path.get_start())
-        waveform_packet.move_to(waveform_path.get_start())
-        packets = VGroup(image_packet, waveform_packet)
-
-        systems = VGroup(gas, high_voltage, monitoring, readout, daq)
-        return (
-            systems,
-            utility_lines,
-            control_lines,
-            data_lines,
-            cloud,
-            packets,
-            [image_path, waveform_path],
-        )
+        destination = pixel(676, 801)
+        hall_f_text = label("HallF - CYGNO04", color=CYGNUS, scale=.27, weight="BOLD")
+        hall_f_text.move_to([-2.3, 2.55, 0])
+        hall_f_text.add_background_rectangle(color=BACKGROUND, opacity=.94, buff=.10)
+        hall_f_leader = DashedLine(hall_f_text.get_right(), destination + UP * .13,
+                                  color=CYGNUS, stroke_width=1.4, dash_length=.06)
+        hall_f_ring = Circle(radius=.13, color=CYGNUS, stroke_width=2).move_to(destination)
+        hall_f = VGroup(hall_f_leader, hall_f_ring, hall_f_text).set_z_index(16, family=True)
+        self.play(FadeIn(hall_f), FadeOut(hall_labels), run_time=.9)
+        self.play(Indicate(hall_f_ring, scale_factor=1.35), run_time=.9)
+        self.wait(3.0)
+        self.play(FadeOut(Group(illustration, header, route_text, marker, hall_f)), run_time=.95)
 
     def dimension_line(
         self,
@@ -1656,6 +996,46 @@ class LNGSPositioning(MovingCameraScene):
             depth_text,
             water_mass_leader,
         )
+
+        # Use the same optical-end projection as Scenes 03 and 04. Sensors
+        # accompany the detector during insertion and stay in the copper/water gap.
+        science = load_science(include_local=False)
+        camera_count = require_positive_integer(
+            science["geometry"]["cameras_per_optical_end"],
+            "geometry.cameras_per_optical_end",
+        )
+        pmt_count = require_positive_integer(
+            science["presentation_projection"]["pmts_visible_per_optical_end"],
+            "presentation_projection.pmts_visible_per_optical_end",
+        )
+        gap = (inner_width-copper_width)/2
+        cameras, pmts = VGroup(), VGroup()
+        for side in (-1, 1):
+            camera_x = centre_x + side*(copper_width/2 + gap*.69)
+            pmt_x = centre_x + side*(copper_width/2 + gap*.22)
+            for y in np.linspace(copper_bottom_y+.25*copper_height,
+                                 copper_bottom_y+.75*copper_height, camera_count):
+                camera = camera_icon().set_width(min(.32, gap*.42))
+                if side == 1:
+                    camera.flip(UP)
+                cameras.add(camera.move_to([camera_x, y, 0]))
+            for y in np.linspace(copper_bottom_y+.16*copper_height,
+                                 copper_bottom_y+.84*copper_height, pmt_count):
+                pmt = pmt_icon().set_width(min(.22, gap*.30))
+                if side == 1:
+                    pmt.flip(UP)
+                pmts.add(pmt.move_to([pmt_x, y, 0]))
+        stage_detector.add(cameras, pmts)
+        readout_heading = label("Readout", color=FOREGROUND, scale=.27, weight="BOLD")
+        camera_caption = label("qCMOS cameras", color=CYGNUS, scale=.25)
+        pmt_caption = label("PMTs", color=PHOTON, scale=.25)
+        readout_labels = VGroup(readout_heading, camera_caption, pmt_caption).arrange(DOWN, buff=.12)
+        readout_labels.move_to([4.55, .40, 0])
+        camera_leader = Line(cameras.get_right(), camera_caption.get_left()+LEFT*.10,
+                             color=CYGNUS, stroke_width=1.4)
+        pmt_leader = Line(pmts[-1].get_right(), pmt_caption.get_left()+LEFT*.10,
+                          color=PHOTON, stroke_width=1.4)
+        detector_annotations.add(readout_labels, camera_leader, pmt_leader)
 
         stages = [
             (stage_pool, pool_annotations, None),

@@ -118,7 +118,8 @@ def load_branding() -> dict[str, Any]:
 
     data = _read_yaml(CONFIG_DIR / "branding.yaml")
     data.pop("schema_version", None)
-    required = {"handle", "page_url", "logo_path", "signature", "outro"}
+    required = {"handle", "page_url", "logo_path", "signature", "outro",
+                "website_url", "website_qr_path", "instagram_qr_path", "watermark"}
     missing = sorted(required.difference(data))
     if missing:
         raise ConfigurationError(f"branding.yaml is missing: {', '.join(missing)}")

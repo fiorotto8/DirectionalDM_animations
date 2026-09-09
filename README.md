@@ -1,7 +1,26 @@
 # CYGNO Directional Dark Matter Animations
 
-Five Manim scenes with a fixed CYGNO signature and Instagram outro. Valid scene
-IDs are defined in `config/scenes.yaml`.
+Five Manim scenes with a fixed CYGNO signature, a small author watermark, and
+an end card with the CYGNO logo and title centered above equally sized website
+and original Instagram QR codes.
+Valid scene IDs are defined in `config/scenes.yaml`.
+
+## Scene status
+
+| Scene | Animation status |
+|---|---|
+| 01 · Galactic wind | Refinements implemented; revised media available for review. |
+| 02 · WIMP recoil | Refinements implemented; revised media available for review. |
+| 03 · TPC readout | Valid, but deprecated as an animation: Scene 04 is the preferred presentation. Retained as a reference. |
+| 04 · Full recoil-to-readout sequence | Preferred detector animation; revised media available for review. |
+| 05 · LNGS positioning | Route and detector insertion with cameras and PMTs revised; pending collaboration validation. |
+
+Scene 03's deprecation is a presentation choice, not a withdrawal of its
+scientific validity. It remains renderable and is still included in `all` and
+the package command. Use Scene 04 for the detector sequence in new edits.
+
+See [the animation review](ANIMATION_REVIEW.md) for narrative changes, model
+qualifications, and verification details.
 
 ## Requirements
 
@@ -16,11 +35,18 @@ python -m pip install -r requirements.txt
 
 ## Private inputs
 
-The official logo is intentionally not published. Place an authorized copy at:
+The original branding assets are private. Place authorized copies at:
 
 ```text
 assets/logo/cygno-logo.jpg
+assets/logo/QR_website.png
+assets/logo/cygno.exp_Instagram-qr.png
 ```
+
+Scene 05 uses the unaltered private image
+`assets/LNGS/View_exp_underground_2.png` for its underground route. Hall F is
+marked on the small connector between Halls A and B. The dot follows an
+illustrative route on the image; its pixel positions are not surveyed geometry.
 
 Scene 05, and therefore `all`, also requires the complete authorized private
 overlay at `config/local.yaml`. A file elsewhere can be selected with:
@@ -39,7 +65,7 @@ With the virtual environment active:
 
 ```bash
 python scripts/render.py all
-python scripts/render.py scene 03_tpc_readout
+python scripts/render.py scene 04_cygno04_full_track
 python scripts/render.py verify
 ```
 

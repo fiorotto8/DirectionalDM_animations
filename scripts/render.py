@@ -486,6 +486,8 @@ def _newest_input(scene: dict[str, Any]) -> float:
         ROOT / "scripts" / "render.py",
         ROOT / "requirements.txt",
         ROOT / branding["logo_path"],
+        ROOT / branding["website_qr_path"],
+        ROOT / branding["instagram_qr_path"],
     ]
     if scene["requires_local_science"]:
         local_override = os.environ.get("CYGNO_LOCAL_CONFIG")
@@ -497,6 +499,32 @@ def _newest_input(scene: dict[str, Any]) -> float:
     return max(path.stat().st_mtime for path in paths if path.is_file())
 
 
+def verify_instagram_artwork(frame, source: Path) -> None:
+    """Check original Instagram nametag fidelity; it is not a standard QR.
+
+    Instagram's stylized finder symbols require its own scanner. Match the
+    central artwork in the decoded video instead of claiming a standard-QR
+    decode for this asset.
+    """
+    import cv2
+    template = cv2.imread(str(source), cv2.IMREAD_COLOR)
+    if template is None:
+        raise RuntimeError(f"Missing Instagram artwork: {source}")
+    code_width = float(load_branding()["outro"]["qr_width"])
+    expected_width = frame.shape[1] * (code_width * 2350/1880) / (128/9)
+    region = frame[:, int(frame.shape[1]*.50):]
+    best = -1.0
+    for width in range(round(expected_width)-3, round(expected_width)+4):
+        scaled = cv2.resize(template, (width, round(width*template.shape[0]/template.shape[1])),
+                            interpolation=cv2.INTER_AREA)
+        height = scaled.shape[0]
+        central = scaled[int(height*.10):int(height*.90), int(width*.10):int(width*.90)]
+        score = cv2.matchTemplate(region, central, cv2.TM_CCOEFF_NORMED).max()
+        best = max(best, float(score))
+    if best < .88:
+        raise RuntimeError(f"Original Instagram artwork is missing or altered (match {best:.3f})")
+
+
 def verify_qr(scene: dict[str, Any], preview: Path, duration: float) -> None:
     try:
         import cv2  # type: ignore[import-not-found]
@@ -506,7 +534,7 @@ def verify_qr(scene: dict[str, Any], preview: Path, duration: float) -> None:
         ) from exc
 
     branding = load_branding()
-    expected = branding["page_url"]
+    expected = branding["website_url"]
     outro_duration = float(branding["outro"]["duration"])
     if duration < outro_duration:
         raise RuntimeError(f"{scene['id']}: video is shorter than the configured outro")
@@ -532,7 +560,22 @@ def verify_qr(scene: dict[str, Any], preview: Path, duration: float) -> None:
                 ]
             )
             image = cv2.imread(str(frame))
-            decoded, _, _ = cv2.QRCodeDetector().detectAndDecode(image)
+            # Isolate the website code from the original Instagram nametag.
+            width = image.shape[1]
+            website_region = image[int(image.shape[0]*.30):, int(width*.10):int(width*.49)]
+            decoded, _, _ = cv2.QRCodeDetector().detectAndDecode(website_region)
+            if not decoded:
+                enlarged = cv2.resize(website_region, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+                decoded, _, _ = cv2.QRCodeDetector().detectAndDecode(enlarged)
+            from urllib.parse import urlsplit
+            def target(url):
+                parts = urlsplit(url)
+                return parts.scheme, parts.netloc, parts.path.rstrip("/")
+            # The supplied website QR includes a fragment; it still targets the
+            # configured page. Preserve that original artwork and payload.
+            if target(decoded) == target(expected):
+                decoded = expected
+            verify_instagram_artwork(image, ROOT / branding["instagram_qr_path"])
             if decoded != expected:
                 raise RuntimeError(
                     f"{scene['id']}: QR at {timestamp:.3f}s decoded as {decoded!r}, expected {expected!r}"

@@ -35,6 +35,7 @@ from manim import (
     Scene,
     Succession,
     Text,
+    ReplacementTransform,
     UP,
     VGroup,
     WHITE,
@@ -193,29 +194,33 @@ class GalacticWind(Scene):
         title = label("Why the wind appears from Cygnus", 40, FOREGROUND, "BOLD")
         heading = VGroup(kicker, title).arrange(DOWN, aligned_edge=LEFT, buff=0.12)
         heading.to_corner(UP + LEFT, buff=0.38)
+        heading.add_background_rectangle(color=BACKGROUND, opacity=1.0, buff=0.06)
+        heading.set_z_index(20, family=True)
         phase = view_badge("GALACTIC FRAME")
         phase.to_edge(RIGHT, buff=0.42)
-        phase.set_y(2.62)
+        phase.set_y(2.35)
         statement = label(
-            "The Solar System orbits within the dark-matter halo",
+            "Dark matter surrounds and fills the visible Galaxy",
             24,
             MUTED,
         )
         statement.next_to(heading, DOWN, aligned_edge=LEFT, buff=0.18)
+        statement.add_background_rectangle(color=BACKGROUND, opacity=1.0, buff=0.04)
+        statement.set_z_index(20, family=True)
 
         galaxy_center = np.array([0.0, -0.15, 0.0])
         halo_shells = VGroup(
             Ellipse(width=12.2, height=6.15),
-            Ellipse(width=10.9, height=5.45),
-            Ellipse(width=9.8, height=4.82),
+            Ellipse(width=8.5, height=6.15),
+            Ellipse(width=3.8, height=6.15),
         )
         for index, shell in enumerate(halo_shells):
             shell.move_to(galaxy_center)
-            shell.set_stroke(HALO, width=1.3, opacity=0.48 - 0.10 * index)
-            shell.set_fill(HALO, opacity=0.025 + 0.010 * index)
+            shell.set_stroke(DM, width=1.5, opacity=0.55 if index == 0 else 0.20)
+            shell.set_fill(DM, opacity=0.09 if index == 0 else 0.0)
 
         halo_particles = VGroup()
-        while len(halo_particles) < 72:
+        while len(halo_particles) < 210:
             x = rng.uniform(-5.65, 5.65)
             y = rng.uniform(-2.78, 2.78)
             if (x / 5.65) ** 2 + (y / 2.78) ** 2 > 1.0:
@@ -223,9 +228,9 @@ class GalacticWind(Scene):
             halo_particles.add(
                 Dot(
                     galaxy_center + np.array([x, y, 0.0]),
-                    radius=rng.uniform(0.014, 0.032),
+                    radius=rng.uniform(0.022, 0.050),
                     color=DM,
-                    fill_opacity=rng.uniform(0.18, 0.46),
+                    fill_opacity=rng.uniform(0.48, 0.82),
                     stroke_width=0,
                 )
             )
@@ -290,7 +295,7 @@ class GalacticWind(Scene):
         center_name = label("GALACTIC CENTER", 18, SOLAR, "BOLD")
         center_name.next_to(bulge, UP, buff=0.08)
         halo_name = label("DARK-MATTER HALO", 18, DM, "BOLD")
-        halo_name.move_to(np.array([5.00, 2.18, 0.0]))
+        halo_name.move_to(np.array([5.00, 1.90, 0.0]))
 
         orbit = DashedVMobject(
             Ellipse(width=6.30, height=3.08).move_to(galaxy_center),
@@ -347,14 +352,16 @@ class GalacticWind(Scene):
         )
 
         self.play(FadeIn(heading, shift=DOWN * 0.08), FadeIn(phase), run_time=0.85)
-        self.play(
-            AnimationGroup(
-                FadeIn(statement), FadeIn(halo_shells), FadeIn(halo_particles), FadeIn(disk),
-                Create(spiral_arms), FadeIn(arm_stars), FadeIn(bulge), FadeIn(center_name),
-                FadeIn(halo_name), lag_ratio=0.06,
-            ),
-            run_time=2.20,
-        )
+        # Establish the extended dark component before introducing visible matter.
+        self.play(FadeIn(statement), FadeIn(halo_shells), FadeIn(halo_particles),
+                  FadeIn(halo_name), run_time=1.8)
+        self.wait(2.2)
+        visible_name = label("STARS + GAS", 19, DISK, "BOLD").move_to([-3.2, .55, 0])
+        visible_name.add_background_rectangle(color=BACKGROUND, opacity=.85, buff=.08)
+        self.play(FadeIn(disk), Create(spiral_arms), FadeIn(arm_stars),
+                  FadeIn(bulge), FadeIn(center_name), FadeIn(visible_name), run_time=2.2)
+        self.wait(1.3)
+        self.play(FadeOut(visible_name), run_time=.5)
         self.wait(0.80)
         self.play(Create(orbit), FadeIn(orbit_name), FadeIn(moving_solar_system), run_time=1.15)
         self.wait(0.65)
@@ -391,13 +398,16 @@ class GalacticWind(Scene):
 
         galactic_visuals = VGroup(
             halo_shells, halo_particles, disk, spiral_arms, arm_stars, bulge, center_name,
-            halo_name, orbit, orbit_name, final_solar_system, global_cygnus,
+            halo_name, orbit, orbit_name, final_solar_system[3],
+            final_solar_system[5],
             cygnus_sightline, toward_cygnus,
         )
         local_phase = view_badge("SOLAR REST FRAME").move_to(phase)
         local_statement = label(
             "Solar-frame arrivals favor Cygnus", 24, MUTED,
-        ).move_to(statement)
+        ).move_to(statement).align_to(heading, LEFT)
+        local_statement.add_background_rectangle(color=BACKGROUND, opacity=1.0, buff=0.04)
+        local_statement.set_z_index(20, family=True)
 
         observer_position = np.array([-4.72, -0.05, 0.0])
         observer = sun_marker(observer_position, scale=1.20)
@@ -432,7 +442,6 @@ class GalacticWind(Scene):
             local_earth_phase[0] += 0.92 * dt
             mobject.move_to(local_earth_position())
 
-        local_earth.add_updater(revolve_local_earth)
         observer_name = label("SOLAR SYSTEM", 20, SOLAR, "BOLD")
         observer_name.next_to(local_earth_orbit, DOWN, buff=0.15).shift(LEFT * 0.35)
         local_cygnus = cygnus_marker(np.array([4.72, 1.48, 0.0]), compact=True)
@@ -462,24 +471,22 @@ class GalacticWind(Scene):
         sightline_name = VGroup(sightline_panel, sightline_text)
         sightline_name.move_to(np.array([-0.25, 1.88, 0.0]))
 
+        # Keep the observer visible through the change of reference frame.
+        observer_anchor = VGroup(*(final_solar_system[i] for i in (0, 1, 2, 4)))
+        local_anchor = VGroup(local_earth_orbit, observer, local_earth, observer_name)
+        self.remove(final_solar_system)
+        self.add(observer_anchor, final_solar_system[3], final_solar_system[5])
         self.play(
             FadeOut(galactic_visuals),
-            FadeOut(phase),
-            FadeOut(statement),
-            run_time=0.90,
+            ReplacementTransform(observer_anchor, local_anchor),
+            Succession(FadeOut(phase, run_time=0.8), FadeIn(local_phase, run_time=1.2)),
+            Succession(FadeOut(statement, run_time=0.8), FadeIn(local_statement, run_time=1.2)),
+            ReplacementTransform(global_cygnus, local_cygnus),
+            run_time=2.0,
         )
         phase = local_phase
         statement = local_statement
-        self.play(
-            FadeIn(phase),
-            FadeIn(statement),
-            FadeIn(local_earth_orbit),
-            FadeIn(observer, scale=0.75),
-            FadeIn(local_earth),
-            FadeIn(observer_name),
-            FadeIn(local_cygnus),
-            run_time=1.10,
-        )
+        local_earth.add_updater(revolve_local_earth)
         self.play(GrowArrow(sightline), FadeIn(sightline_name), run_time=1.05)
         self.wait(1.25)
 

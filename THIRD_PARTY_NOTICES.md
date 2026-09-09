@@ -12,7 +12,7 @@ Direct runtime dependencies:
 | OpenCV Python Headless | 4.10.0.84 | Apache-2.0 | QR verification |
 | Pillow | 10.2.0 | HPND | In-memory official-logo mask |
 | PyYAML | 6.0.1 | MIT | Configuration loading |
-| qrcode | 8.2 | BSD-3-Clause | Standard Instagram-page QR generation |
+| qrcode | 8.2 | BSD-3-Clause | Standard QR construction utilities |
 
 Manim brings transitive dependencies; consult the installed distributions for
 their notices.
