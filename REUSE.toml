@@ -20,3 +20,14 @@ path = ["README.md", "CITATION.cff", "THIRD_PARTY_NOTICES.md", "TRADEMARKS.md"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 CYGNO animation contributors"
 SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = [
+  "media/videos/*/480p30/*.mp4",
+  "media/videos/*/480p30/*.gif",
+  "media/vertical/*/360x640p30/*.mp4",
+  "media/stories/*/*/360x640p30/*.mp4",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 CYGNO animation contributors"
+SPDX-License-Identifier = "CC-BY-4.0"

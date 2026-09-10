@@ -3,8 +3,22 @@
 /asset/
 /config/local.yaml
 
-# Generated animation and release artifacts
-/media/
+# Generated artifacts: publish only the low-resolution delivery files
+/media/**
+!/media/videos/
+!/media/videos/*/
+!/media/videos/*/480p30/
+!/media/videos/*/480p30/*.mp4
+!/media/videos/*/480p30/*.gif
+!/media/vertical/
+!/media/vertical/*/
+!/media/vertical/*/360x640p30/
+!/media/vertical/*/360x640p30/*.mp4
+!/media/stories/
+!/media/stories/*/
+!/media/stories/*/*/
+!/media/stories/*/*/360x640p30/
+!/media/stories/*/*/360x640p30/*.mp4
 /dist/
 
 # Python environments and caches
