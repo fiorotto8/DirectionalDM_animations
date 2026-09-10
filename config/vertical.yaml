@@ -1,0 +1,195 @@
+schema_version: 1
+canvas:
+  width: 9
+  height: 16
+  safe_pixels:
+  - 120
+  - 250
+  - 900
+  - 1500
+profiles:
+  posting:
+    width: 1080
+    height: 1920
+    fps: 30
+    crf: 18
+  preview:
+    width: 360
+    height: 640
+    fps: 30
+    crf: 18
+scenes:
+- id: 01_galactic_wind
+  file: scenes/vertical/galactic.py
+  class_name: VerticalGalacticWind
+  title: Dark matter and the Galaxy
+  requires_local_science: false
+  sections:
+  - id: 01_halo
+    title: The dark-matter halo
+    entry: enter_halo
+    method: halo
+    story_seconds: 15
+    full_seconds: 9.9
+    context: Our Galaxy contains more than stars and gas.
+    takeaway: Dark matter surrounds and fills the visible Galaxy.
+    story_motion_scale: 1.276596
+  - id: 01_cygnus_wind
+    title: A wind from Cygnus
+    entry: enter_wind
+    method: wind
+    story_seconds: 15
+    full_seconds: 12.9
+    context: The Solar System moves through the Galactic halo.
+    takeaway: The radiant points toward Cygnus; particles travel toward us.
+    story_motion_scale: 0.967742
+- id: 02_wimp_recoil
+  file: scenes/vertical/recoil.py
+  class_name: VerticalWIMPRecoil
+  title: From a collision to a track
+  requires_local_science: false
+  sections:
+  - id: 02_recoil
+    title: A nucleus recoils
+    entry: enter_recoil
+    method: recoil
+    story_seconds: 18
+    full_seconds: 12.06
+    context: A dark-matter particle can scatter from a gas nucleus.
+    takeaway: The struck gas nucleus carries the recoil momentum.
+    story_motion_scale: 1.835443
+    full_motion_scale: 1.4
+    full_settle_seconds: 0.7
+    story_settle_seconds: 0.7
+  - id: 02_ionization
+    title: A recoil ionizes gas
+    entry: enter_ionization
+    method: ionization
+    story_seconds: 18
+    full_seconds: 10.427
+    context: A recoiling nucleus travels through detector gas.
+    takeaway: Electrons are freed; positive gas ions remain.
+    story_motion_scale: 2.880795
+    full_motion_scale: 1.4
+    full_settle_seconds: 0.7
+    story_settle_seconds: 0.7
+  - id: 02_sense
+    title: Which way did it travel?
+    entry: enter_sense
+    method: sense
+    story_seconds: 18
+    full_seconds: 7.16
+    context: A gas recoil leaves an asymmetric ionization track.
+    takeaway: Charge asymmetry gives a statistical sense estimate.
+    story_motion_scale: 1.537102
+    full_motion_scale: 1.4
+    full_settle_seconds: 0.7
+    story_settle_seconds: 0.7
+- id: 04_cygno04_full_track
+  file: scenes/vertical/detector.py
+  class_name: VerticalFullTrack
+  title: One recoil, from gas to 3D
+  requires_local_science: false
+  sections:
+  - id: 04_recoil
+    title: A recoil inside CYGNO
+    entry: enter_recoil
+    method: recoil
+    story_seconds: 15
+    full_seconds: 7.0
+    context: CYGNO records the ionization left in its detector gas.
+    takeaway: The recoil leaves a track of ionization electrons.
+    story_motion_scale: 1.846154
+  - id: 04_drift
+    title: Drift and diffusion
+    entry: enter_drift
+    method: drift
+    story_seconds: 15
+    full_seconds: 6.4
+    context: Ionization electrons start inside the gas volume.
+    takeaway: Electrons drift toward the GEMs while the cloud spreads.
+    story_motion_scale: 2.033898
+  - id: 04_gem
+    title: Triple-GEM amplification
+    entry: enter_gem
+    method: gem
+    story_seconds: 15
+    full_seconds: 7.1
+    context: A cloud of drift electrons reaches three GEM foils.
+    takeaway: Avalanches multiply electrons and produce light.
+    story_motion_scale: 1.794118
+  - id: 04_readout
+    title: Two views of one event
+    entry: enter_readout
+    method: readout
+    story_seconds: 17
+    full_seconds: 9.51
+    context: qCMOS cameras and PMTs detect light from the GEMs.
+    takeaway: Camera images show shape; PMT signals provide timing.
+    story_motion_scale: 2.310345
+    full_motion_scale: 1.45
+    full_settle_seconds: 0.8
+    story_settle_seconds: 0.8
+  - id: 04_daq_cloud
+    title: Record and store
+    entry: enter_daq_cloud
+    method: daq_cloud
+    story_seconds: 17
+    full_seconds: 10.46
+    context: The detector has produced an image and a timing signal.
+    takeaway: Trigger and DAQ record the event; INFN Cloud stores it.
+    story_motion_scale: 1.861111
+    full_motion_scale: 1.3
+    full_settle_seconds: 0.8
+    story_settle_seconds: 0.8
+  - id: 04_offline
+    title: Offline 3D analysis
+    entry: enter_offline
+    method: offline
+    story_seconds: 18
+    full_seconds: 13.175
+    context: Stored camera and PMT data are analyzed offline.
+    takeaway: Analyze the 3D track, direction and recoil type.
+    story_motion_scale: 1.623529
+    full_motion_scale: 1.35
+    full_settle_seconds: 1.2
+    story_settle_seconds: 1.2
+- id: 05_lngs_positioning
+  file: scenes/vertical/site.py
+  class_name: VerticalLNGS
+  title: CYGNO at Gran Sasso
+  requires_local_science: true
+  sections:
+  - id: 05_gran_sasso
+    title: Inside Gran Sasso
+    entry: enter_gran_sasso
+    method: gran_sasso
+    story_seconds: 18
+    full_seconds: 11.68
+    context: CYGNO is located at the underground LNGS laboratory.
+    takeaway: The mountain provides overburden above the laboratory.
+    story_motion_scale: 1.930556
+    full_motion_scale: 1.4
+    full_settle_seconds: 1.3
+    story_settle_seconds: 1.3
+  - id: 05_hall_f
+    title: Route to Hall F
+    entry: enter_hall_f
+    method: hall_f
+    story_seconds: 19
+    full_seconds: 16.5
+    context: Follow the underground access route to CYGNO-04.
+    takeaway: Hall F is the narrow connector between Halls A and B.
+    story_motion_scale: 1.025641
+  - id: 05_assembly
+    title: Detector and shielding
+    entry: enter_assembly
+    method: assembly
+    story_seconds: 21
+    full_seconds: 18.045
+    context: Shielding surrounds the CYGNO-04 gas detector and readout.
+    takeaway: The detector, cameras and PMTs sit inside the water shield.
+    story_motion_scale: 1.085271
+    full_motion_scale: 1.05
+    full_settle_seconds: 2.2
+    story_settle_seconds: 2.2

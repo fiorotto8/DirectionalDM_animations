@@ -600,7 +600,8 @@ def verify_scene(
         raise RuntimeError(f"{scene['id']}: preview/GIF durations differ")
     if abs(preview_duration - master_duration) > tolerance:
         raise RuntimeError(f"{scene['id']}: preview/master durations differ")
-    if check_freshness:
+    from scripts.provenance import verify as verify_provenance
+    if check_freshness and not verify_provenance(scene, video_root):
         newest = _newest_input(scene)
         for output in (preview, gif, master):
             if output.stat().st_mtime < newest:
@@ -613,7 +614,7 @@ def render_scene(scene: dict[str, Any], work_root: Path, output_root: Path) -> N
     preview = render_mp4(scene, PREVIEW, work_root, output_root)
     make_gif(scene, preview, work_root, output_root)
     render_mp4(scene, MASTER, work_root, output_root)
-    verify_scene(scene, video_root=output_root)
+    verify_scene(scene, video_root=output_root, check_freshness=False)
 
 
 def _expected_outputs(
@@ -681,12 +682,12 @@ def _replace_directory(source: Path, destination: Path, *, within: Path) -> None
 
 
 def _clear_generated_side_outputs() -> None:
-    """Keep media/ limited to the verified production-video matrix."""
+    """Remove only known horizontal caches; preserve other output families."""
 
     if not MEDIA_ROOT.exists():
         return
     for path in MEDIA_ROOT.iterdir():
-        if path.name != VIDEO_ROOT.name:
+        if path.name in {"images", "texts", "Tex"}:
             _remove_tree(path, within=MEDIA_ROOT)
 
 
@@ -706,6 +707,9 @@ def render_all() -> None:
             render_scene(scene, work_root, output_root)
         _verify_output_shape(output_root, scenes=scenes)
         _replace_directory(output_root, VIDEO_ROOT, within=MEDIA_ROOT)
+        from scripts.provenance import record
+        for scene in scenes:
+            record(scene, VIDEO_ROOT)
     finally:
         _remove_tree(staging, within=MEDIA_ROOT)
     _clear_generated_side_outputs()
@@ -771,7 +775,14 @@ def parse_args() -> argparse.Namespace:
     subcommands.add_parser("all", help="render and verify all five production scenes")
     scene_parser = subcommands.add_parser("scene", help="render one production scene")
     scene_parser.add_argument("scene_id")
-    subcommands.add_parser("verify", help="verify the complete local output matrix")
+    verify_parser = subcommands.add_parser("verify", help="verify an output family")
+    verify_parser.add_argument("--target", choices=("horizontal", "vertical", "stories", "all"), default="horizontal")
+    vertical_parser = subcommands.add_parser("vertical", help="render portrait animations and Stories")
+    vertical_sub = vertical_parser.add_subparsers(dest="vertical_action", required=True)
+    vertical_sub.add_parser("all")
+    for action in ("scene", "stories", "story"):
+        selection = vertical_sub.add_parser(action)
+        selection.add_argument("identifier")
     package_parser = subcommands.add_parser("package", help="prepare low-resolution release assets")
     package_parser.add_argument("--tag", required=True)
     return parser.parse_args()
@@ -780,7 +791,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        if args.command == "all":
+        if args.command == "vertical":
+            from scripts.vertical import render_selection
+            render_selection(args.vertical_action, getattr(args, "identifier", None))
+        elif args.command == "all":
             render_all()
         elif args.command == "scene":
             staging = _new_render_staging()
@@ -797,13 +811,20 @@ def main() -> int:
                 )
             finally:
                 _remove_tree(staging, within=MEDIA_ROOT)
+            from scripts.provenance import record
+            record(scene, VIDEO_ROOT)
             _clear_generated_side_outputs()
             verify_scene(scene)
         elif args.command == "verify":
-            verify_all()
+            if args.target in ("horizontal", "all"):
+                verify_all()
+            from scripts.vertical import verify_family
+            for family in ("vertical", "stories"):
+                if args.target in (family, "all"):
+                    verify_family(family)
         else:
             package_release(args.tag)
-    except (ConfigurationError, FileNotFoundError, RuntimeError, subprocess.CalledProcessError) as exc:
+    except (ConfigurationError, FileNotFoundError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
